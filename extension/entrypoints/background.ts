@@ -1,5 +1,7 @@
 import { Msg } from "../src/messaging";
 import { setFirewall } from "../src/firewall";
+import { runAgent } from "../src/agent/loop";
+import { CFG } from "../src/config";
 
 const OFFSCREEN_PATH = "offscreen.html";
 let creating: Promise<void> | null = null;
@@ -23,9 +25,53 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 });
 
+async function activeTabId(): Promise<number> {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab!.id!;
+}
+
+function emit(kind: string, payload: Record<string, unknown>) {
+  chrome.runtime.sendMessage({ type: Msg.AGENT_EVENT, payload: { kind, ...payload } }).catch(() => {});
+}
+
+async function postStep(url: string, body: string) {
+  emit("net", { host: new URL(url).host, bytes: body.length });
+  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
+  return r.json();
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === Msg.SET_FIREWALL) {
     setFirewall(!!msg.payload.on).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg?.type === Msg.AGENT_START) {
+    (async () => {
+      await ensureOffscreen();
+      const tabId = await activeTabId();
+
+      const res = await runAgent(msg.payload.task, {
+        perceive: async (newSession) => {
+          const png = await chrome.tabs.captureVisibleTab({ format: "png" });
+          const collected = await chrome.tabs.sendMessage(tabId, { type: Msg.COLLECT_REGIONS });
+          return chrome.runtime.sendMessage({
+            target: "offscreen", type: Msg.RUN_PERCEPTION,
+            payload: { png, regionList: collected.regionList, domSensitive: collected.domSensitive, task: msg.payload.task, newSession },
+          });
+        },
+        askServer: (task, p, history) =>
+          postStep(`${CFG.serverUrl}/agent/step`, JSON.stringify({ task, image_b64: p.sanitizedPng, manifest: p.manifest, history })),
+        resolve: async (action) =>
+          (await chrome.runtime.sendMessage({ target: "offscreen", type: Msg.RESOLVE_ACTION, payload: { action } })).action,
+        execute: (action) => chrome.tabs.sendMessage(tabId, { type: Msg.EXECUTE_ACTION, payload: { action } }),
+        emit: ({ step, action, observation, perceive }) =>
+          emit("step", { step: { step, thought: action.thought, action: JSON.stringify(action), observation, sanitizedPng: perceive.sanitizedPng, manifest: perceive.manifest, summary: perceive.screenSummary } }),
+      }, { maxSteps: CFG.maxSteps });
+
+      emit("end", { status: res.status });
+      sendResponse({ ok: true });
+    })();
     return true;
   }
   return false;

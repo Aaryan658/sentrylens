@@ -10,7 +10,7 @@ describe("contracts", () => {
       url: "https://x.test/", viewport: { w: 1280, h: 800, dpr: 1 },
       regions: [{ id: 1, bbox: [0, 0, 10, 10], source: "dom", role: "button", name: "Login", interactable: true }],
     };
-    expect(RegionListSchema.parse(v).regions[0].name).toBe("Login");
+    expect(RegionListSchema.parse(v).regions[0]!.name).toBe("Login");
   });
 
   it("rejects a RegionList with a 3-tuple bbox", () => {

@@ -1,4 +1,4 @@
-import type { Region } from "@sentrylens/shared";
+import type { BBox, Region } from "@sentrylens/shared";
 import { defaultRisk, defaultStyle } from "@sentrylens/shared";
 import { iou } from "./geometry.js";
 import type { SensitiveRegion } from "./types.js";
@@ -15,9 +15,9 @@ function tokens(s: string): string[] {
   return s.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !STOP.has(t));
 }
 
-function overlapsLoosely(a: readonly number[], b: readonly number[]): boolean {
-  const [ax, ay, aw, ah] = a as number[];
-  const [bx, by, bw, bh] = b as number[];
+function overlapsLoosely(a: BBox, b: BBox): boolean {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
   const pad = 12;
   return ax < bx + bw + pad && ax + aw + pad > bx && ay < by + bh + pad && ay + ah + pad > by;
 }

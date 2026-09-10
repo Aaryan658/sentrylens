@@ -37,7 +37,7 @@ describe("findStructuredPii", () => {
   });
   it("returns char offsets", () => {
     const [hit] = findStructuredPii("x a@b.co");
-    expect(hit.start).toBe(2);
-    expect(hit.end).toBe(8);
+    expect(hit!.start).toBe(2);
+    expect(hit!.end).toBe(8);
   });
 });

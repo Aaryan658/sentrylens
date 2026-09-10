@@ -14,7 +14,7 @@ describe("buildBlockRules", () => {
     const rules = buildBlockRules();
     const block = rules.find((r) => r.action.type === "block")!;
     const allow = rules.find((r) => r.action.type === "allow")!;
-    expect(allow.priority).toBeGreaterThan(block.priority);
+    expect(allow.priority!).toBeGreaterThan(block.priority!);
   });
 
   it("every rule id is unique", () => {

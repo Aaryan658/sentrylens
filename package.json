@@ -8,7 +8,7 @@
     "dev:ext": "pnpm --filter @sentrylens/extension dev",
     "build:ext": "pnpm --filter @sentrylens/extension build",
     "dev:server": "pnpm --filter @sentrylens/server dev",
-    "typecheck": "tsc -b --pretty"
+    "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

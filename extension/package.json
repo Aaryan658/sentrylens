@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "wxt",
-    "build": "wxt build"
+    "build": "wxt build",
+    "postinstall": "wxt prepare",
+    "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {
     "@sentrylens/shared": "workspace:*",

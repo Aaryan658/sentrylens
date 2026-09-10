@@ -36,13 +36,13 @@ describe("fuseRegions", () => {
     };
     const out = fuseRegions(inp);
     expect(out).toHaveLength(1);
-    expect(out[0].category).toBe("EMAIL");
-    expect(out[0].detected_by.sort()).toEqual(["ocr+ner", "regex"]);
+    expect(out[0]!.category).toBe("EMAIL");
+    expect(out[0]!.detected_by.sort()).toEqual(["ocr+ner", "regex"]);
   });
 
   it("promotes a face to high confidence when the page is sensitive", () => {
     const out = fuseRegions({ ...empty, faces: [[0, 0, 10, 10]], pageSensitive: true });
-    expect(out[0].confidence).toBeGreaterThanOrEqual(0.9);
+    expect(out[0]!.confidence).toBeGreaterThanOrEqual(0.9);
   });
 });
 

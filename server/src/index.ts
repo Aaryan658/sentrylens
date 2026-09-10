@@ -1,11 +1,11 @@
-import express from "express";
+import express, { type Express } from "express";
 import { ServerRequestSchema, type ServerResponse } from "@sentrylens/shared";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./prompt.js";
 import { parseAction } from "./parse.js";
 import { mockRespond } from "./providers/mock.js";
 import { chatVision } from "./providers/openai-compatible.js";
 
-const app = express();
+const app: Express = express();
 app.use(express.json({ limit: "25mb" }));
 
 const MOCK = process.env.MOCK === "1";

@@ -1,4 +1,4 @@
-import "./env.js";
+import { configureTransformers } from "./env.js";
 import { AutoProcessor, AutoModelForVision2Seq, RawImage } from "@huggingface/transformers";
 
 let processor: any = null;
@@ -6,6 +6,7 @@ let model: any = null;
 
 export async function initVlm(): Promise<void> {
   if (model) return;
+  configureTransformers();
   processor = await AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct");
   model = await AutoModelForVision2Seq.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct", {
     dtype: "q4f16", device: "webgpu",

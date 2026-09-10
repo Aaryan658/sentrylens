@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wxt",
-    "build": "wxt build",
+    "vendor": "node scripts/vendor-runtimes.mjs",
+    "build": "node scripts/vendor-runtimes.mjs && wxt build",
     "postinstall": "wxt prepare",
     "typecheck": "wxt prepare && tsc --noEmit",
     "e2e": "node e2e/run.mjs"

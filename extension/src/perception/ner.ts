@@ -1,4 +1,4 @@
-import "./env.js";
+import { configureTransformers } from "./env.js";
 import { pipeline } from "@huggingface/transformers";
 import type { PiiCategory } from "@sentrylens/shared";
 
@@ -14,6 +14,7 @@ export type NerDevice = "webgpu" | "wasm" | "cpu";
 
 export async function initNer(device: NerDevice): Promise<void> {
   if (ner) return;
+  configureTransformers();
   ner = await pipeline("token-classification", "onnx-community/multilang-pii-ner-ONNX", {
     device, dtype: device === "webgpu" ? "q4" : "q8",
   });

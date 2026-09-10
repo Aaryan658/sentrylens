@@ -3,5 +3,13 @@ packages:
   - "extension"
   - "server"
 
+# pnpm 11 requires explicit approval for dependency build scripts.
+# onnxruntime-node / spawn-sync are Node-only and unused (the extension uses
+# onnxruntime-web in the browser), so their native builds are declined.
 allowBuilds:
   esbuild: true
+  protobufjs: true
+  sharp: true
+  tesseract.js: true
+  onnxruntime-node: false
+  spawn-sync: false

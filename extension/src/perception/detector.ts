@@ -3,7 +3,7 @@ import { AutoModel, AutoProcessor, RawImage } from "@huggingface/transformers";
 let model: any = null;
 let processor: any = null;
 
-export async function initDetector(device: "webgpu" | "wasm"): Promise<void> {
+export async function initDetector(device: "webgpu" | "wasm" | "cpu"): Promise<void> {
   if (model) return;
   processor = await AutoProcessor.from_pretrained("Xenova/yolos-tiny");
   model = await AutoModel.from_pretrained("Xenova/yolos-tiny", { device, dtype: "q8" });

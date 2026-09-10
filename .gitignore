@@ -7,3 +7,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# tesseract.js downloads language data next to cwd
+*.traineddata

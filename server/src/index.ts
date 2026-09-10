@@ -47,7 +47,12 @@ app.post("/agent/step", async (req, res) => {
   }
 });
 
-const port = Number(process.env.PORT ?? 8787);
-app.listen(port, () => console.log(`sentrylens server on :${port} (mock=${MOCK})`));
+// Only bind a port when run as the entrypoint (`tsx src/index.ts`), not when
+// imported (tests import `app` and call `app.listen(0)` themselves).
+const isEntrypoint = process.argv[1]?.replace(/\\/g, "/").endsWith("server/src/index.ts");
+if (isEntrypoint) {
+  const port = Number(process.env.PORT ?? 8787);
+  app.listen(port, () => console.log(`sentrylens server on :${port} (mock=${MOCK})`));
+}
 
 export { app };

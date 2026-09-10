@@ -22,7 +22,7 @@ const CONTRACT =
 
 export function buildManifest(args: BuildManifestArgs): RedactionManifest {
   const { image, elements, redacted, mapping, degraded } = args;
-  let faceCounter = 0;
+  const counters: Record<string, number> = {};
 
   const elementRegions = elements.map((e) => ({
     id: e.id, bbox: e.bbox, kind: "element" as const,
@@ -30,8 +30,13 @@ export function buildManifest(args: BuildManifestArgs): RedactionManifest {
   }));
 
   const redactedRegions: RedactedRegion[] = redacted.map((r, i) => {
+    // A region whose value is unknown (FACE, or a DOM-detected field we cannot
+    // read) gets a positional placeholder and NO mapping-table entry — there is
+    // nothing to resolve it back to. Only value-bearing regions are registered.
     const placeholder =
-      r.category === "FACE" ? `FACE#${++faceCounter}` : mapping.placeholderFor(r.category, r.value ?? "");
+      r.value == null
+        ? `${r.category}#${(counters[r.category] = (counters[r.category] ?? 0) + 1)}`
+        : mapping.placeholderFor(r.category, r.value);
     return {
       id: 10_000 + i,
       bbox: r.bbox,

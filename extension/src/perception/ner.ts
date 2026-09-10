@@ -9,7 +9,9 @@ const LABEL_MAP: Record<string, PiiCategory> = {
   ADDRESS: "ADDRESS", LOC: "ADDRESS", DATE: "DOB", ORG: "OTHER",
 };
 
-export async function initNer(device: "webgpu" | "wasm"): Promise<void> {
+export type NerDevice = "webgpu" | "wasm" | "cpu";
+
+export async function initNer(device: NerDevice): Promise<void> {
   if (ner) return;
   ner = await pipeline("token-classification", "onnx-community/multilang-pii-ner-ONNX", {
     device, dtype: device === "webgpu" ? "q4" : "q8",

@@ -3,12 +3,23 @@ import { iou, unionBox } from "./geometry.js";
 import { findStructuredPii } from "./validators.js";
 import type { PerceptionInputs, SensitiveRegion } from "./types.js";
 
-function wordsForSpan(inp: PerceptionInputs, start: number, end: number) {
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9@.]/g, "");
+
+function wordsForSpan(inp: PerceptionInputs, start: number, end: number, value?: string) {
   const boxes = [];
   for (let i = 0; i < inp.ocrWords.length; i++) {
     const wStart = inp.ocrOffsets[i]!;
     const wEnd = wStart + inp.ocrWords[i]!.text.length;
     if (wStart < end && wEnd > start) boxes.push(inp.ocrWords[i]!.bbox);
+  }
+  // The NER model can renormalise whitespace/punctuation, so its char offsets
+  // may not line up with ocrJoined. Fall back to matching the span's own tokens
+  // against OCR words so a real hit (esp. PERSON_NAME) still gets a box.
+  if (boxes.length === 0 && value) {
+    const want = value.split(/\s+/).map(norm).filter((t) => t.length > 1);
+    if (want.length) {
+      for (const w of inp.ocrWords) if (want.includes(norm(w.text))) boxes.push(w.bbox);
+    }
   }
   return boxes;
 }
@@ -30,7 +41,7 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
   }
 
   for (const span of inp.nerSpans) {
-    const boxes = wordsForSpan(inp, span.start, span.end);
+    const boxes = wordsForSpan(inp, span.start, span.end, span.value);
     if (boxes.length === 0) continue;
     raw.push({ bbox: unionBox(boxes), category: span.category, value: span.value, confidence: 0.75, detected_by: ["ocr+ner"] });
   }

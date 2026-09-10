@@ -4,10 +4,22 @@ import type { PiiCategory } from "@sentrylens/shared";
 
 let ner: any = null;
 
+// Keys are normalised (uppercase, alphanumerics only) before lookup, so this
+// covers both classic CoNLL labels (PER/LOC/ORG) and the ai4privacy-style PII
+// vocabulary the multilang-pii-ner model actually emits (FIRSTNAME, LASTNAME…).
 const LABEL_MAP: Record<string, PiiCategory> = {
   PER: "PERSON_NAME", PERSON: "PERSON_NAME", NAME: "PERSON_NAME",
-  EMAIL: "EMAIL", PHONE: "PHONE_NUMBER", TEL: "PHONE_NUMBER",
-  ADDRESS: "ADDRESS", LOC: "ADDRESS", DATE: "DOB", ORG: "OTHER",
+  FIRSTNAME: "PERSON_NAME", LASTNAME: "PERSON_NAME", MIDDLENAME: "PERSON_NAME",
+  GIVENNAME: "PERSON_NAME", SURNAME: "PERSON_NAME", FULLNAME: "PERSON_NAME",
+  USERNAME: "PERSON_NAME",
+  EMAIL: "EMAIL", EMAILADDRESS: "EMAIL",
+  PHONE: "PHONE_NUMBER", TEL: "PHONE_NUMBER", PHONENUMBER: "PHONE_NUMBER",
+  ADDRESS: "ADDRESS", STREETADDRESS: "ADDRESS", LOC: "ADDRESS", CITY: "ADDRESS",
+  DATE: "DOB", DOB: "DOB", DATEOFBIRTH: "DOB",
+  SSN: "GOV_ID", SOCIALNUMBER: "GOV_ID", IDCARDNUMBER: "GOV_ID", PASSPORTNUMBER: "GOV_ID",
+  CREDITCARDNUMBER: "CREDIT_CARD",
+  IP: "IP_ADDRESS", IPV4: "IP_ADDRESS", IPV6: "IP_ADDRESS", IPADDRESS: "IP_ADDRESS",
+  ORG: "OTHER", COMPANYNAME: "OTHER",
 };
 
 export type NerDevice = "webgpu" | "wasm" | "cpu";
@@ -57,7 +69,7 @@ export async function runNer(text: string): Promise<NerSpan[]> {
     }
     for (const e of out) {
       if (e.score < 0.5) continue;
-      const key = (e.entity_group ?? e.entity ?? "").toUpperCase().replace(/^[BI]-/, "");
+      const key = (e.entity_group ?? e.entity ?? "").toUpperCase().replace(/^[BI]-/, "").replace(/[^A-Z0-9]/g, "");
       const category = LABEL_MAP[key];
       if (!category) continue;
       spans.push({ category, value: chunk.slice(e.start, e.end), start: base + e.start, end: base + e.end });

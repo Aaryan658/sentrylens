@@ -38,6 +38,7 @@ const copy = (from, to) => {
 console.log("tesseract:");
 const tessCore = pkgDir("tesseract.js-core", pkgDir("tesseract.js"));
 for (const f of readdirSync(tessCore)) {
+  if (f === "index.js") continue; // package entry, not a runtime
   if (/\.(js|wasm)$/.test(f) || f.endsWith(".wasm.js")) copy(join(tessCore, f), join(pub, "tesseract", f));
 }
 copy(join(pkgDir("tesseract.js"), "dist", "worker.min.js"), join(pub, "tesseract", "worker.min.js"));

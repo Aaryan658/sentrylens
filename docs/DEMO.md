@@ -22,9 +22,16 @@ pnpm --filter @sentrylens/extension build          # -> extension/.output/chrome
 ## 2. Start the server (mock mode)
 
 ```bash
-cd server
-cp .env.example .env        # leave MOCK=1 for the first run
-pnpm start                  # "sentrylens server on :8787 (mock=true)"
+cp server/.env.example server/.env     # ships with MOCK=1
+pnpm --filter @sentrylens/server start  # "sentrylens server on :8787 (mock=true)"
+```
+
+The server reads `server/.env` on startup (no shell `export` needed — real env
+vars still win). It **must** print `(mock=true)`. If it prints `(mock=false)` or
+`EADDRINUSE`, a stale server holds the port:
+
+```bash
+npx kill-port 8787
 ```
 
 ## 3. Serve the demo page
@@ -43,7 +50,11 @@ content script will not inject.
 1. `chrome://extensions` → toggle **Developer mode** (top right).
 2. **Load unpacked** → select `extension/.output/chrome-mv3`.
 3. Pin **SentryLens** to the toolbar.
-4. Reload the demo tab so the content script injects into it.
+
+The service worker (re)injects the content script into the target tab on each
+run, so you do **not** need to hand-reload the demo tab after reloading the
+extension. It also skips `chrome://` / devtools tabs and targets the most
+recently used normal tab, so the side panel can be docked anywhere.
 
 ## 5. Run a task
 
@@ -59,7 +70,10 @@ offscreen console: `chrome://extensions` → SentryLens → *Inspect views:
 offscreen.html*. Subsequent runs are instant (served from the HTTP cache).
 
 Expected:
-- Step cards appear. In mock mode the run ends `done` after ~3 steps.
+- Step cards appear. In mock mode the agent walks the login: **type** the
+  operator id → **type** the password (the action's `value` is `PASSWORD#1`, the
+  placeholder — the server never sees the real value; the extension substitutes
+  it locally before it reaches the page) → **click** Sign in → `done`.
 - Each card's **"What the server saw"** shows the **masked** screenshot and the
   manifest JSON. The manifest contains `PASSWORD#…`, `EMAIL#…`, `PHONE_NUMBER#…`,
   `PAN#…`, `FACE#1` — and **no raw values**.
@@ -102,7 +116,9 @@ Expected:
    API_KEY=<your key>
    ```
 
-2. Restart the server (`pnpm start` — it now prints `mock=false`).
+2. Restart the server: `npx kill-port 8787` then
+   `pnpm --filter @sentrylens/server start` — it reads `server/.env` and now
+   prints `(mock=false)`. (`server/.env` is gitignored; never commit the key.)
 3. Re-run the task from the side panel. The VLM now issues real actions: type the
    operator id, type into the password field (a placeholder if it were PII —
    here the demo password is a literal, so a literal is acceptable for the MVP),

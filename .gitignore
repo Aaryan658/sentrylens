@@ -13,3 +13,6 @@ dist/
 # perception E2E scratch
 **/e2e/.verdict
 **/e2e/.last-run.log
+
+# Claude Code local session logs
+.claude/logs/

@@ -41,18 +41,25 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
           p,
           new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms)),
         ]);
-      const tryStep = async (name: string, fn: () => Promise<void>, ms = 25000) => {
+      const tryStep = async (
+        name: string,
+        fn: () => Promise<void>,
+        { ms = 25000, optional = false }: { ms?: number; optional?: boolean } = {},
+      ) => {
         console.log(`[sentrylens] ${name}…`);
         try { await withTimeout(fn(), ms, name); console.log(`[sentrylens] ${name} ok`); }
-        catch (e) { degraded = true; console.warn(`[sentrylens] ${name} failed:`, e); }
+        catch (e) { if (!optional) degraded = true; console.warn(`[sentrylens] ${name} failed:`, e); }
       };
       await tryStep("ocr", async () => { ocr = await runOcr(png); });
       await tryStep("ner", async () => { await initNer(device); nerSpans = await runNer(ocr.joined); });
       await tryStep("faces", async () => {
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         faces = await runFaces(bmp);
-      }, 15000);
-      await tryStep("detector", async () => { await initDetector(device); await runDetector(png); });
+      }, { ms: 15000 });
+      // yolos-tiny is a generic COCO detector, not a PII signal — supplementary
+      // only, and its transformers.js API keeps shifting. Never let it degrade
+      // the privacy result.
+      await tryStep("detector", async () => { await initDetector(device); await runDetector(png); }, { optional: true });
 
       // SmolVLM screen summary is WebGPU-only and optional — skipped silently
       // (with a degraded notice already covering the rest) if it cannot load or

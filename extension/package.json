@@ -7,7 +7,7 @@
     "build": "wxt build",
     "postinstall": "wxt prepare",
     "typecheck": "wxt prepare && tsc --noEmit",
-    "e2e": "node --import tsx e2e/perception-e2e.ts"
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "@sentrylens/shared": "workspace:*",

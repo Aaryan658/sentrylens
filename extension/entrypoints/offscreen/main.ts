@@ -3,6 +3,7 @@ import { runOcr } from "../../src/perception/ocr";
 import { runNer, initNer } from "../../src/perception/ner";
 import { runFaces } from "../../src/perception/faces";
 import { runDetector, initDetector } from "../../src/perception/detector";
+import { initVlm, screenSummary } from "../../src/perception/vlm";
 import { assemblePerception } from "../../src/perception/pipeline";
 import { maskImage } from "../../src/redaction/mask";
 import { MappingTable } from "../../src/redaction/mapping";
@@ -28,6 +29,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       let ocr = { words: [] as { text: string; bbox: [number, number, number, number] }[], joined: "", offsets: [] as number[] };
       let nerSpans: { category: PiiCategory; value: string; start: number; end: number }[] = [];
       let faces: [number, number, number, number][] = [];
+      let screenSummaryText = "";
 
       try {
         ocr = await runOcr(png);
@@ -41,6 +43,12 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
         degraded = true;
         console.warn("perception degraded:", e);
       }
+
+      // SmolVLM screen summary is WebGPU-only and optional — skipped silently
+      // (with a degraded notice already covering the rest) if it cannot load.
+      try {
+        if (device === "webgpu") { await initVlm(); screenSummaryText = await screenSummary(png); }
+      } catch { /* VLM summary optional */ }
 
       const { manifest } = assemblePerception({
         task,
@@ -62,7 +70,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
 
       const redacted = manifest.regions.filter((r) => r.kind === "redacted");
       const sanitizedPng = await maskImage(png, redacted as never);
-      sendResponse({ sanitizedPng, manifest, degraded });
+      sendResponse({ sanitizedPng, manifest, degraded, screenSummary: screenSummaryText });
     })();
     return true;
   }

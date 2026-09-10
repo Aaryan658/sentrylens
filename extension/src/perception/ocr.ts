@@ -9,6 +9,12 @@ export async function initOcr(): Promise<void> {
   worker = await createWorker("eng");
 }
 
+export async function disposeOcr(): Promise<void> {
+  if (!worker) return;
+  await worker.terminate();
+  worker = null;
+}
+
 export async function runOcr(pngDataUrl: string): Promise<{ words: OcrWord[]; joined: string; offsets: number[] }> {
   if (!worker) await initOcr();
   const { data } = await worker!.recognize(pngDataUrl);

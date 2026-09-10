@@ -2,21 +2,27 @@
  * Headless end-to-end check of the perception + redaction path, outside Chrome.
  *
  * Rasterises the demo duty-roster to a PNG (sharp), then runs the REAL models:
- *   tesseract.js OCR  ->  @huggingface/transformers NER (WASM)  ->  assemblePerception
- * and asserts the produced manifest leaks none of the raw PII, then POSTs it to
- * the running server (mock mode) and validates the returned action.
+ *   tesseract.js OCR  ->  @huggingface/transformers NER  ->  assemblePerception
+ *   ->  planMasks + real pixel compositing (sharp)  ->  server round-trip
+ * and asserts that no raw PII survives into the manifest, the request body, or
+ * the sanitised image pixels.
  *
  * Run:  pnpm --filter @sentrylens/extension e2e
- * Needs network egress for first-run model weights (tesseract lang data ~2 MB,
- * PII-NER ONNX ~small). Server must be up:  MOCK=1 PORT=8787 pnpm --filter @sentrylens/server start
+ * Server must be up on :8787.  Mock:  MOCK=1 PORT=8787 pnpm --filter @sentrylens/server start
+ * Real VLM: set E2E_VLM=1 and run the server with MOCK=0 + a real API key.
+ * First run downloads model weights (tesseract eng ~2 MB, PII-NER ONNX small).
  */
+import { writeFileSync } from "node:fs";
 import sharp from "sharp";
-import { runOcr } from "../src/perception/ocr.js";
-import { runNer, initNer } from "../src/perception/ner.js";
+import { runOcr, disposeOcr } from "../src/perception/ocr.js";
+import { runNer, initNer, disposeNer } from "../src/perception/ner.js";
+import { runFaces } from "../src/perception/faces.js";
 import { assemblePerception } from "../src/perception/pipeline.js";
+import { planMasks, MASK_COLOR } from "../src/redaction/mask.js";
 import { ServerResponseSchema, type PiiCategory } from "@sentrylens/shared";
 
-const RAW_PII = ["A. Menon", "Menon", "9000000000", "ops.lead@vssc.test", "ABCDE1234F"];
+const RAW_PII = ["A. Menon", "Menon", "9000000000", "ops.lead@vssc.test", "ABCDE1234F", "hunter2seed"];
+const SERVER = "http://localhost:8787";
 
 const SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="320">
@@ -31,20 +37,25 @@ const SVG = `
   </g>
 </svg>`;
 
-function fail(msg: string): never { console.error("✖ " + msg); process.exit(1); }
+const VERDICT = new URL("./.verdict", import.meta.url);
+function fail(msg: string): never { console.error("✖ " + msg); writeFileSync(VERDICT, "FAIL " + msg); process.exit(1); }
 function ok(msg: string) { console.log("✔ " + msg); }
+function hexToRgb(h: string): [number, number, number] {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
 async function main() {
   const t0 = Date.now();
-  const pngBuf = await sharp(Buffer.from(SVG)).png().toBuffer();
-  const pngDataUrl = `data:image/png;base64,${pngBuf.toString("base64")}`;
-  ok(`rasterised roster -> PNG (${pngBuf.length} bytes)`);
+  const basePng = await sharp(Buffer.from(SVG)).png().toBuffer();
+  const pngDataUrl = `data:image/png;base64,${basePng.toString("base64")}`;
+  ok(`rasterised roster -> PNG (${basePng.length} bytes)`);
 
   console.log("running tesseract.js OCR (first run downloads eng traineddata)...");
   const ocr = await runOcr(pngDataUrl);
   console.log(`   OCR read ${ocr.words.length} words:`, JSON.stringify(ocr.joined));
   if (!/ops\.lead@vssc\.test|ABCDE1234F|9000000000/.test(ocr.joined)) {
-    fail("OCR did not recover any of the seeded PII strings - check tesseract install/network");
+    fail("OCR did not recover any seeded PII - check tesseract install/network");
   }
   ok("OCR recovered seeded PII text from the raster");
 
@@ -55,14 +66,28 @@ async function main() {
   console.log(`   NER spans:`, JSON.stringify(nerSpans));
   ok(`NER ran (${nerSpans.length} span(s))`);
 
+  // Best-effort real mediapipe face detection. It is a browser API; in Node it
+  // usually cannot initialise. We report which happened rather than failing.
+  let facesRan = false;
+  try {
+    const { data, info } = await sharp(basePng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const imageData = { data: new Uint8ClampedArray(data), width: info.width, height: info.height };
+    const faces = await runFaces(imageData as unknown as ImageBitmap);
+    facesRan = true;
+    ok(`mediapipe FaceDetector ran in Node (${faces.length} face(s) - the roster has none, 0 is correct)`);
+  } catch (e) {
+    console.log(`   mediapipe FaceDetector did not run headless: ${(e as Error).message.split("\n")[0]}`);
+    console.log("   (expected - it is a browser API; the face path is covered by fuse.test.ts + verified in Chrome)");
+  }
+
   const result = assemblePerception({
     task: "open the telemetry report for station VSSC-03",
     image: { w: 640, h: 320, dpr: 1 },
     domRegions: [
-      { id: 1, bbox: [24, 236, 200, 24], source: "dom", role: "textbox", name: "Password", interactable: true },
-      { id: 2, bbox: [24, 276, 220, 24], source: "dom", role: "button", name: "Open VSSC-03 report", interactable: true },
+      { id: 1, bbox: [24, 236, 220, 26], source: "dom", role: "textbox", name: "Password", interactable: true },
+      { id: 2, bbox: [24, 286, 240, 26], source: "dom", role: "button", name: "Open VSSC-03 report", interactable: true },
     ],
-    domSensitive: [{ bbox: [24, 236, 200, 24], category: "PASSWORD" as PiiCategory }],
+    domSensitive: [{ bbox: [24, 236, 220, 26], category: "PASSWORD" as PiiCategory }],
     faces: [],
     ocrWords: ocr.words,
     ocrJoined: ocr.joined,
@@ -82,35 +107,67 @@ async function main() {
   const valueBearing = redacted.filter((r) => r.value_len != null);
   if (valueBearing.length === 0) fail("no value-bearing redacted region was produced");
   for (const r of valueBearing) {
-    const back = result.mapping.resolve(r.placeholder);
-    if (!back) fail(`placeholder ${r.placeholder} (value_len ${r.value_len}) does not resolve back to a real value`);
-    if (RAW_PII.some((s) => s === back || s.includes(back) || back.includes(s))) {
-      // resolving is supposed to give back the real value locally — that's fine,
-      // it just must never have travelled off-device (asserted above on the JSON).
-    }
+    if (!result.mapping.resolve(r.placeholder)) fail(`placeholder ${r.placeholder} does not resolve locally`);
   }
   ok(`every value-bearing placeholder resolves locally (${valueBearing.length}); null-value regions carry positional ids only`);
 
+  // Real pixel masking: composite opaque MASK_COLOR rects over every planned op,
+  // then read back one redacted region and prove the pixels there are the mask
+  // colour (i.e. whatever text was underneath is destroyed in the sent image).
+  const ops = planMasks(redacted as any);
+  const composited = await sharp(basePng).composite(
+    ops.map((op) => ({
+      input: { create: { width: Math.max(1, Math.round(op.bbox[2])), height: Math.max(1, Math.round(op.bbox[3])), channels: 4 as const, background: MASK_COLOR } },
+      left: Math.max(0, Math.round(op.bbox[0])),
+      top: Math.max(0, Math.round(op.bbox[1])),
+    })),
+  ).png().toBuffer();
+  const emailOp = ops[redacted.findIndex((r) => r.category === "EMAIL")]!;
+  const probe = await sharp(composited)
+    .extract({ left: Math.round(emailOp.bbox[0]) + 4, top: Math.round(emailOp.bbox[1]) + 4, width: 8, height: 6 })
+    .removeAlpha().raw().toBuffer();
+  const [mr, mg, mb] = hexToRgb(MASK_COLOR);
+  for (let i = 0; i < probe.length; i += 3) {
+    if (Math.abs(probe[i]! - mr) > 6 || Math.abs(probe[i + 1]! - mg) > 6 || Math.abs(probe[i + 2]! - mb) > 6) {
+      fail(`sanitised image still shows non-mask pixels inside the EMAIL region at byte ${i} (rgb ${probe[i]},${probe[i+1]},${probe[i+2]})`);
+    }
+  }
+  ok(`sanitised image pixels inside a redacted region are the mask colour ${MASK_COLOR} - underlying text destroyed`);
+  const sanitisedDataUrl = `data:image/png;base64,${composited.toString("base64")}`;
+
   const body = JSON.stringify({
     task: "open the telemetry report for station VSSC-03",
-    image_b64: pngDataUrl,
+    image_b64: sanitisedDataUrl,
     manifest: result.manifest,
     history: [],
   });
   const bodyLeak = RAW_PII.filter((s) => body.includes(s));
   if (bodyLeak.length) fail(`request body to server LEAKED: ${bodyLeak.join(", ")}`);
-  ok("full request body to the server carries no raw PII");
+  ok("full request body to the server (masked image + manifest) carries no raw PII");
 
-  const res = await fetch("http://localhost:8787/agent/step", {
+  const realVlm = process.env.E2E_VLM === "1";
+  const health = await fetch(`${SERVER}/health`).then((r) => r.json() as Promise<{ mock: boolean }>).catch(() => null);
+  if (!health) fail(`no server on :8787 - start it first (${realVlm ? "MOCK=0 + API key" : "MOCK=1"})`);
+  if (realVlm && health.mock) fail("E2E_VLM=1 but the server is in mock mode - restart it with MOCK=0 and a real key");
+  console.log(`   server: ${health.mock ? "MOCK" : "REAL provider"}`);
+
+  const res = await fetch(`${SERVER}/agent/step`, {
     method: "POST", headers: { "content-type": "application/json" }, body,
   });
-  if (!res.ok) fail(`server returned ${res.status} (is MOCK=1 server up on :8787?)`);
-  const parsed = ServerResponseSchema.safeParse(await res.json());
-  if (!parsed.success) fail("server response failed ServerResponseSchema");
+  if (!res.ok) fail(`server returned ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  const parsed = ServerResponseSchema.safeParse(json);
+  if (!parsed.success) fail(`server response failed ServerResponseSchema: ${JSON.stringify(json)}`);
+  console.log(`   action:`, JSON.stringify(parsed.data.action));
   ok(`server accepted the redacted request and returned a valid ${parsed.data.action.type} action`);
 
-  console.log(`\nALL CHECKS PASSED in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  process.exit(0); // tesseract worker + onnxruntime keep the loop alive otherwise
+  console.log(`\nALL CHECKS PASSED in ${((Date.now() - t0) / 1000).toFixed(1)}s` +
+    `  [OCR:real  NER:real  faces:${facesRan ? "real" : "browser-only"}  mask:real-pixels  VLM:${health.mock ? "mock" : "real"}]`);
+  writeFileSync(VERDICT, "PASS");
+  await Promise.allSettled([disposeOcr(), disposeNer()]);
+  // onnxruntime-node can assert during interpreter teardown on Windows; the
+  // .verdict file written above is the authoritative result. Exit hard.
+  setImmediate(() => process.exit(0));
 }
 
-main().catch((e) => fail(String(e?.stack ?? e)));
+main().catch((e) => fail(String((e as Error)?.stack ?? e)));

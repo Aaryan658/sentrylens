@@ -18,6 +18,11 @@ export async function initNer(device: NerDevice): Promise<void> {
   });
 }
 
+export async function disposeNer(): Promise<void> {
+  await ner?.dispose?.();
+  ner = null;
+}
+
 export interface NerSpan { category: PiiCategory; value: string; start: number; end: number }
 
 export async function runNer(text: string): Promise<NerSpan[]> {

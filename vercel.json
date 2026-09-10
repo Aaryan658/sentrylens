@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "echo 'no build step: demo/ is static, api/ is bundled by Vercel'",
+  "outputDirectory": "demo",
+  "rewrites": [
+    { "source": "/health", "destination": "/api" },
+    { "source": "/agent/step", "destination": "/api" }
+  ],
+  "functions": {
+    "api/index.ts": { "maxDuration": 60 }
+  }
+}

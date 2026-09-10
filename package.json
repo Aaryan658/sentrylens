@@ -8,7 +8,13 @@
     "dev:ext": "pnpm --filter @sentrylens/extension dev",
     "build:ext": "pnpm --filter @sentrylens/extension build",
     "dev:server": "pnpm --filter @sentrylens/server dev",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "vercel-dev": "vercel dev"
+  },
+  "dependencies": {
+    "@sentrylens/shared": "workspace:*",
+    "express": "4.21.2",
+    "zod": "3.24.1"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

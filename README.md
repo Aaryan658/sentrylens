@@ -51,6 +51,7 @@ npx serve demo                                        # open the printed URL
 ```
 
 Full walkthrough and the Chrome verification checklist: **[docs/DEMO.md](docs/DEMO.md)**.
+Hosting the server + demo on Vercel: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 Research and design rationale: `SIH26171_Deep_Research_Report.md`,
 `docs/superpowers/specs/2026-09-09-sentrylens-design.md`.
 

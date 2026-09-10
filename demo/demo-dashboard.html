@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>ISRO Ops Console (demo)</title>
+<style>
+  body{font:14px system-ui;margin:0;background:#0b1a2b;color:#e8eef5}
+  header{background:#12263f;padding:12px 20px;font-weight:600}
+  main{padding:20px;max-width:760px}
+  .card{background:#12263f;border:1px solid #26415f;border-radius:8px;padding:16px;margin-bottom:16px}
+  label{display:block;margin:8px 0 4px}
+  input{padding:8px;width:260px;border-radius:6px;border:1px solid #375d84;background:#0b1a2b;color:#e8eef5}
+  button{margin-top:12px;padding:8px 14px;border:0;border-radius:6px;background:#2e73c7;color:#fff;cursor:pointer}
+  table{border-collapse:collapse;width:100%}
+  td,th{border:1px solid #26415f;padding:8px;text-align:left}
+  .avatar{width:48px;height:48px;border-radius:50%;background:#8899aa;display:inline-block}
+  [hidden]{display:none}
+</style></head>
+<body>
+<header>ISRO Operations Console — DEMO (synthetic data)</header>
+<main>
+  <section class="card" id="login">
+    <h3>Operator sign-in</h3>
+    <label for="username">Operator ID</label>
+    <input id="username" autocomplete="username" />
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <button id="login-btn">Sign in</button>
+  </section>
+
+  <section class="card" id="telemetry" hidden>
+    <h3>Duty roster</h3>
+    <table>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Operator</td><td>A. Menon</td></tr>
+      <tr><td>Phone</td><td>9000000000</td></tr>
+      <tr><td>Email</td><td>ops.lead@vssc.test</td></tr>
+      <tr><td>PAN</td><td>ABCDE1234F</td></tr>
+      <tr><td>Photo</td><td><span class="avatar" data-sensitive></span></td></tr>
+    </table>
+    <button id="open-report">Open VSSC-03 report</button>
+  </section>
+
+  <section class="card" id="report" hidden>
+    <h3>Telemetry report — station VSSC-03</h3>
+    <p>Downlink nominal. Last packet 12:04:37 IST. Battery bus 28.1 V. No anomalies flagged.</p>
+  </section>
+</main>
+<script>
+  document.getElementById("login-btn").addEventListener("click", () => {
+    document.getElementById("telemetry").hidden = false;
+  });
+  document.getElementById("open-report").addEventListener("click", () => {
+    document.getElementById("report").hidden = false;
+  });
+</script>
+</body></html>

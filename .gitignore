@@ -10,4 +10,6 @@ dist/
 
 # tesseract.js downloads language data next to cwd
 *.traineddata
-e2e/.verdict
+# perception E2E scratch
+**/e2e/.verdict
+**/e2e/.last-run.log

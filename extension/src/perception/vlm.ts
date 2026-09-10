@@ -1,3 +1,4 @@
+import "./env.js";
 import { AutoProcessor, AutoModelForVision2Seq, RawImage } from "@huggingface/transformers";
 
 let processor: any = null;

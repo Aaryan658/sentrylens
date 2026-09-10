@@ -9,7 +9,14 @@ export default defineConfig({
     host_permissions: ["<all_urls>"],
     side_panel: { default_path: "sidepanel.html" },
     content_security_policy: {
-      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+      // script/wasm stay local (MV3 forbids remote code). connect-src is opened
+      // for model *weights* (HF, mediapipe .tflite, jsdelivr) and the agent
+      // server (localhost in dev, any https host once deployed).
+      extension_pages:
+        "script-src 'self' 'wasm-unsafe-eval'; " +
+        "object-src 'self'; " +
+        "worker-src 'self'; " +
+        "connect-src 'self' data: blob: http://localhost:* http://127.0.0.1:* https://*;",
     },
   },
 });

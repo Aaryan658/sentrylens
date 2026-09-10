@@ -14,15 +14,50 @@ export interface AgentDeps {
 
 export interface AgentResult { status: "done" | "fail"; history: StepRecord[] }
 
+const failAction = (reason: string): AgentAction => ({ type: "fail", reason, thought: "" });
+
 export async function runAgent(task: string, deps: AgentDeps, opts: { maxSteps: number }): Promise<AgentResult> {
   const history: StepRecord[] = [];
   let notFoundStreak = 0;
 
   for (let step = 1; step <= opts.maxSteps; step++) {
-    const perceive = await deps.perceive(step === 1);
-    const { action: rawAction } = await deps.askServer(task, perceive, history);
-    const action = await deps.resolve(rawAction);
-    const { ok, observation } = await deps.execute(action);
+    let perceive: PerceiveResult;
+    try {
+      perceive = await deps.perceive(step === 1);
+    } catch (e) {
+      history.push({ action: failAction(`perception failed: ${String(e)}`), observation: "perception error" });
+      return { status: "fail", history };
+    }
+
+    let rawAction: AgentAction | undefined;
+    try {
+      rawAction = (await deps.askServer(task, perceive, history)).action;
+    } catch (e) {
+      history.push({ action: failAction(`server call failed: ${String(e)}`), observation: "server error" });
+      deps.emit({ step, action: failAction("server call failed"), observation: `${e}`, perceive });
+      return { status: "fail", history };
+    }
+    if (!rawAction || typeof rawAction.type !== "string") {
+      const a = failAction("server returned no valid action");
+      history.push({ action: a, observation: "bad response" });
+      deps.emit({ step, action: a, observation: "bad response", perceive });
+      return { status: "fail", history };
+    }
+
+    let action: AgentAction;
+    try {
+      action = await deps.resolve(rawAction);
+    } catch {
+      action = rawAction;
+    }
+
+    let ok = false;
+    let observation = "execute failed";
+    try {
+      ({ ok, observation } = await deps.execute(action));
+    } catch (e) {
+      observation = `execute threw: ${String(e)}`;
+    }
 
     history.push({ action: rawAction, observation });
     deps.emit({ step, action: rawAction, observation, perceive });
@@ -33,6 +68,6 @@ export async function runAgent(task: string, deps: AgentDeps, opts: { maxSteps: 
     notFoundStreak = !ok && /not found/.test(observation) ? notFoundStreak + 1 : 0;
     if (notFoundStreak >= 2) return { status: "fail", history };
   }
-  history.push({ action: { type: "fail", reason: "step budget exceeded", thought: "" }, observation: "budget" });
+  history.push({ action: failAction("step budget exceeded"), observation: "budget" });
   return { status: "fail", history };
 }

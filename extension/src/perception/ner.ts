@@ -1,3 +1,4 @@
+import "./env.js";
 import { pipeline } from "@huggingface/transformers";
 import type { PiiCategory } from "@sentrylens/shared";
 

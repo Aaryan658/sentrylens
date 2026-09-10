@@ -1,3 +1,4 @@
+import "./env.js";
 import { AutoModel, AutoProcessor, RawImage } from "@huggingface/transformers";
 
 let model: any = null;

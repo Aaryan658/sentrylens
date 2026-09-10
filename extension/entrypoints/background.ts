@@ -32,7 +32,13 @@ function emit(kind: string, payload: Record<string, unknown>) {
 
 async function postStep(url: string, body: string) {
   emit("net", { host: new URL(url).host, bytes: body.length });
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
+  let r: Response;
+  try {
+    r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
+  } catch (e) {
+    throw new Error(`cannot reach agent server at ${url} — is it running? (${String(e)})`);
+  }
+  if (!r.ok) throw new Error(`agent server ${r.status}: ${(await r.text()).slice(0, 300)}`);
   return r.json();
 }
 
@@ -49,29 +55,41 @@ export default defineBackground(() => {
 
     if (msg?.type === Msg.AGENT_START) {
       (async () => {
-        await ensureOffscreen();
-        const tabId = await activeTabId();
+        let status = "fail";
+        try {
+          await ensureOffscreen();
+          const tabId = await activeTabId();
 
-        const res = await runAgent(msg.payload.task, {
-          perceive: async (newSession) => {
-            const png = await chrome.tabs.captureVisibleTab({ format: "png" });
-            const collected = await chrome.tabs.sendMessage(tabId, { type: Msg.COLLECT_REGIONS });
-            return chrome.runtime.sendMessage({
-              target: "offscreen", type: Msg.RUN_PERCEPTION,
-              payload: { png, regionList: collected.regionList, domSensitive: collected.domSensitive, task: msg.payload.task, newSession },
-            });
-          },
-          askServer: (task, p, history) =>
-            postStep(`${CFG.serverUrl}/agent/step`, JSON.stringify({ task, image_b64: p.sanitizedPng, manifest: p.manifest, history })),
-          resolve: async (action) =>
-            (await chrome.runtime.sendMessage({ target: "offscreen", type: Msg.RESOLVE_ACTION, payload: { action } })).action,
-          execute: (action) => chrome.tabs.sendMessage(tabId, { type: Msg.EXECUTE_ACTION, payload: { action } }),
-          emit: ({ step, action, observation, perceive }) =>
-            emit("step", { step: { step, thought: action.thought, action: JSON.stringify(action), observation, sanitizedPng: perceive.sanitizedPng, manifest: perceive.manifest, summary: perceive.screenSummary } }),
-        }, { maxSteps: CFG.maxSteps });
-
-        emit("end", { status: res.status });
-        sendResponse({ ok: true });
+          const res = await runAgent(msg.payload.task, {
+            perceive: async (newSession) => {
+              const png = await chrome.tabs.captureVisibleTab({ format: "png" });
+              const collected = await chrome.tabs.sendMessage(tabId, { type: Msg.COLLECT_REGIONS });
+              if (!collected?.regionList) throw new Error("content script did not respond — reload the target tab");
+              const p = await chrome.runtime.sendMessage({
+                target: "offscreen", type: Msg.RUN_PERCEPTION,
+                payload: { png, regionList: collected.regionList, domSensitive: collected.domSensitive, task: msg.payload.task, newSession },
+              });
+              if (!p || p.error || !p.sanitizedPng) throw new Error(p?.error ?? "offscreen perception returned nothing");
+              return p;
+            },
+            askServer: (task, p, history) =>
+              postStep(`${CFG.serverUrl}/agent/step`, JSON.stringify({ task, image_b64: p.sanitizedPng, manifest: p.manifest, history })),
+            resolve: async (action) => {
+              const r = await chrome.runtime.sendMessage({ target: "offscreen", type: Msg.RESOLVE_ACTION, payload: { action } });
+              return r?.action ?? action;
+            },
+            execute: (action) => chrome.tabs.sendMessage(tabId, { type: Msg.EXECUTE_ACTION, payload: { action } }),
+            emit: ({ step, action, observation, perceive }) =>
+              emit("step", { step: { step, thought: action.thought, action: JSON.stringify(action), observation, sanitizedPng: perceive.sanitizedPng, manifest: perceive.manifest, summary: perceive.screenSummary } }),
+          }, { maxSteps: CFG.maxSteps });
+          status = res.status;
+        } catch (e) {
+          console.error("[sentrylens] agent run failed:", e);
+          emit("step", { step: { step: 0, thought: "", action: "{}", observation: `run failed: ${String(e)}`, sanitizedPng: "", manifest: {} } });
+        } finally {
+          emit("end", { status });
+          try { sendResponse({ ok: true, status }); } catch { /* panel may be closed */ }
+        }
       })();
       return true;
     }

@@ -2,11 +2,17 @@ import { FilesetResolver, FaceDetector } from "@mediapipe/tasks-vision";
 
 let detector: FaceDetector | null = null;
 
+// The mediapipe wasm runtime is code -> it must be bundled (extension/public/
+// mediapipe/wasm/) in MV3; the .tflite model is a fetched asset (connect-src)
+// and may stay remote.
+const WASM_BASE =
+  typeof chrome !== "undefined" && typeof chrome.runtime?.getURL === "function"
+    ? chrome.runtime.getURL("mediapipe/wasm")
+    : "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/wasm";
+
 export async function initFaces(): Promise<void> {
   if (detector) return;
-  const files = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/wasm",
-  );
+  const files = await FilesetResolver.forVisionTasks(WASM_BASE);
   detector = await FaceDetector.createFromOptions(files, {
     baseOptions: {
       modelAssetPath:

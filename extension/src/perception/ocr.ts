@@ -4,9 +4,24 @@ let worker: Worker | null = null;
 
 export interface OcrWord { text: string; bbox: [number, number, number, number] }
 
+// In an MV3 extension, tesseract.js must not fetch its worker/core/lang data
+// from a CDN (blocked by CSP). Point it at the copies in extension/public/
+// tesseract/. In Node (e2e harness) `chrome` is undefined -> use defaults.
+function tesseractOptions(): Record<string, unknown> {
+  if (typeof chrome === "undefined" || typeof chrome.runtime?.getURL !== "function") return {};
+  const dir = chrome.runtime.getURL("tesseract/");
+  return {
+    workerPath: dir + "worker.min.js",
+    corePath: dir,
+    langPath: dir,
+    workerBlobURL: false,
+    cacheMethod: "none",
+  };
+}
+
 export async function initOcr(): Promise<void> {
   if (worker) return;
-  worker = await createWorker("eng");
+  worker = await createWorker("eng", 1, tesseractOptions());
 }
 
 export async function disposeOcr(): Promise<void> {

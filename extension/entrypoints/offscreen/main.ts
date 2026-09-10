@@ -1,3 +1,4 @@
+import "../../src/perception/env";
 import { Msg } from "../../src/messaging";
 import { runOcr } from "../../src/perception/ocr";
 import { runNer, initNer } from "../../src/perception/ner";
@@ -24,6 +25,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       const { png, regionList, domSensitive, task, newSession } = msg.payload;
       if (newSession) { session.clear(); session = new MappingTable(); }
       const device: "webgpu" | "wasm" = (await hasWebGpu()) ? "webgpu" : "wasm";
+      console.log("[sentrylens] perception start, device =", device);
 
       let degraded = false;
       let ocr = { words: [] as { text: string; bbox: [number, number, number, number] }[], joined: "", offsets: [] as number[] };
@@ -31,18 +33,18 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       let faces: [number, number, number, number][] = [];
       let screenSummaryText = "";
 
-      try {
-        ocr = await runOcr(png);
-        await initNer(device);
-        nerSpans = await runNer(ocr.joined);
+      // Each model is independent — one failing must not skip the others.
+      const tryStep = async (name: string, fn: () => Promise<void>) => {
+        try { await fn(); }
+        catch (e) { degraded = true; console.warn(`[sentrylens] ${name} failed:`, e); }
+      };
+      await tryStep("ocr", async () => { ocr = await runOcr(png); });
+      await tryStep("ner", async () => { await initNer(device); nerSpans = await runNer(ocr.joined); });
+      await tryStep("faces", async () => {
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         faces = await runFaces(bmp);
-        await initDetector(device);
-        await runDetector(png); // informational for MVP
-      } catch (e) {
-        degraded = true;
-        console.warn("perception degraded:", e);
-      }
+      });
+      await tryStep("detector", async () => { await initDetector(device); await runDetector(png); });
 
       // SmolVLM screen summary is WebGPU-only and optional — skipped silently
       // (with a degraded notice already covering the rest) if it cannot load.
@@ -70,15 +72,29 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
 
       const redacted = manifest.regions.filter((r) => r.kind === "redacted");
       const sanitizedPng = await maskImage(png, redacted as never);
+      console.log(`[sentrylens] perception done: ${redacted.length} redacted region(s), degraded=${degraded}`);
       sendResponse({ sanitizedPng, manifest, degraded, screenSummary: screenSummaryText });
-    })();
+    })().catch((e) => {
+      console.error("[sentrylens] perception fatal:", e);
+      sendResponse({ error: `perception failed: ${String(e)}` });
+    });
     return true;
   }
 
   if (msg.type === Msg.RESOLVE_ACTION) {
-    const action = msg.payload.action as AgentAction;
-    if (action.type === "type") sendResponse({ action: { ...action, value: session.resolveAll(action.value) } });
-    else sendResponse({ action });
+    try {
+      const action = msg.payload?.action as AgentAction | undefined;
+      if (!action || typeof action.type !== "string") {
+        sendResponse({ action });
+      } else if (action.type === "type") {
+        sendResponse({ action: { ...action, value: session.resolveAll(action.value) } });
+      } else {
+        sendResponse({ action });
+      }
+    } catch (e) {
+      console.error("[sentrylens] resolve failed:", e);
+      sendResponse({ action: msg.payload?.action });
+    }
     return true;
   }
   return false;

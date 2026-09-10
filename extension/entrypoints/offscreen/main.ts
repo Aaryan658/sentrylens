@@ -33,9 +33,17 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       let faces: [number, number, number, number][] = [];
       let screenSummaryText = "";
 
-      // Each model is independent — one failing must not skip the others.
-      const tryStep = async (name: string, fn: () => Promise<void>) => {
-        try { await fn(); }
+      // Each model is independent — one failing (or *hanging*: a wasm worker that
+      // never posts ready, an HF weight fetch that stalls) must not skip the
+      // others. DOM-based redaction below works without any of them.
+      const withTimeout = <T>(p: Promise<T>, ms: number, label: string) =>
+        Promise.race([
+          p,
+          new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms)),
+        ]);
+      const tryStep = async (name: string, fn: () => Promise<void>, ms = 25000) => {
+        console.log(`[sentrylens] ${name}…`);
+        try { await withTimeout(fn(), ms, name); console.log(`[sentrylens] ${name} ok`); }
         catch (e) { degraded = true; console.warn(`[sentrylens] ${name} failed:`, e); }
       };
       await tryStep("ocr", async () => { ocr = await runOcr(png); });
@@ -43,14 +51,19 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       await tryStep("faces", async () => {
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         faces = await runFaces(bmp);
-      });
+      }, 15000);
       await tryStep("detector", async () => { await initDetector(device); await runDetector(png); });
 
       // SmolVLM screen summary is WebGPU-only and optional — skipped silently
-      // (with a degraded notice already covering the rest) if it cannot load.
+      // (with a degraded notice already covering the rest) if it cannot load or
+      // stalls loading its weights.
       try {
-        if (device === "webgpu") { await initVlm(); screenSummaryText = await screenSummary(png); }
-      } catch { /* VLM summary optional */ }
+        if (device === "webgpu") {
+          console.log("[sentrylens] vlm…");
+          await withTimeout((async () => { await initVlm(); screenSummaryText = await screenSummary(png); })(), 30000, "vlm");
+          console.log("[sentrylens] vlm ok");
+        }
+      } catch (e) { console.warn("[sentrylens] vlm failed:", e); }
 
       const { manifest } = assemblePerception({
         task,

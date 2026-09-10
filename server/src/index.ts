@@ -1,9 +1,27 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import express, { type Express } from "express";
 import { ServerRequestSchema, type ServerResponse } from "@sentrylens/shared";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./prompt.js";
 import { parseAction } from "./parse.js";
 import { mockRespond } from "./providers/mock.js";
 import { chatVision } from "./providers/openai-compatible.js";
+
+// Minimal .env loader (no dependency). Reads server/.env if present; variables
+// already set in the real environment always win. Lets `MOCK=1` etc. be set
+// without shell-specific export syntax — PowerShell rejects `VAR=1 cmd`.
+(() => {
+  try {
+    const envPath = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (!m) continue;
+      const key = m[1]!;
+      if (process.env[key] === undefined) process.env[key] = (m[2] ?? "").replace(/^["']|["']$/g, "");
+    }
+  } catch { /* no .env file — rely on the real environment */ }
+})();
 
 const app: Express = express();
 app.use(express.json({ limit: "25mb" }));

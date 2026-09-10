@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RegionListSchema, RedactionManifestSchema, AgentActionSchema } from "@sentrylens/shared";
 
 export const Msg = {
+  PING: "PING",
   COLLECT_REGIONS: "COLLECT_REGIONS",
   RUN_PERCEPTION: "RUN_PERCEPTION",
   RESOLVE_ACTION: "RESOLVE_ACTION",

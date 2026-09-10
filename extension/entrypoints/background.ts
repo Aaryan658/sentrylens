@@ -21,9 +21,50 @@ export async function ensureOffscreen(): Promise<void> {
   await creating;
 }
 
-async function activeTabId(): Promise<number> {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return tab!.id!;
+const NON_INJECTABLE =
+  /^(chrome|edge|about|devtools|view-source|chrome-extension|moz-extension):|^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/;
+
+// The side panel is often docked next to chrome://extensions or devtools, so the
+// "active tab of the last focused window" can be a page no content script can run
+// in. Prefer it when it's injectable, else fall back to the most-recently-used
+// http(s) tab.
+async function resolveTarget(): Promise<{ tabId: number; windowId: number }> {
+  const injectable = (t?: chrome.tabs.Tab) => !!t?.id && !!t.url && !NON_INJECTABLE.test(t.url);
+
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (injectable(active)) return { tabId: active!.id!, windowId: active!.windowId };
+
+  const [best] = (await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] }))
+    .filter(injectable)
+    .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
+  if (best) return { tabId: best.id!, windowId: best.windowId };
+
+  throw new Error("no injectable tab — open the demo page in a normal browser tab, then click Run task");
+}
+
+// After an extension reload the target tab keeps running the *old* content script
+// (its message port is dead), and a stale tab may have none at all. Ping first;
+// (re)inject on failure so the user never has to hand-reload the demo tab.
+async function ensureContentScript(tabId: number): Promise<void> {
+  const ping = async () => {
+    try {
+      const r = await chrome.tabs.sendMessage(tabId, { type: Msg.PING });
+      return !!r?.pong;
+    } catch {
+      return false;
+    }
+  };
+  if (await ping()) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content-scripts/content.js"] });
+  } catch (e) {
+    throw new Error(`could not inject content script into tab ${tabId} — is it a normal web page? (${String(e)})`);
+  }
+  for (let i = 0; i < 10; i++) {
+    if (await ping()) return;
+    await new Promise((res) => setTimeout(res, 50));
+  }
+  throw new Error("content script injected but not responding — reload the target tab and retry");
 }
 
 function emit(kind: string, payload: Record<string, unknown>) {
@@ -58,11 +99,12 @@ export default defineBackground(() => {
         let status = "fail";
         try {
           await ensureOffscreen();
-          const tabId = await activeTabId();
+          const { tabId, windowId } = await resolveTarget();
+          await ensureContentScript(tabId);
 
           const res = await runAgent(msg.payload.task, {
             perceive: async (newSession) => {
-              const png = await chrome.tabs.captureVisibleTab({ format: "png" });
+              const png = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
               const collected = await chrome.tabs.sendMessage(tabId, { type: Msg.COLLECT_REGIONS });
               if (!collected?.regionList) throw new Error("content script did not respond — reload the target tab");
               const p = await chrome.runtime.sendMessage({

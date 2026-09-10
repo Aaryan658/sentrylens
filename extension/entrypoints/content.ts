@@ -6,6 +6,10 @@ export default defineContentScript({
   matches: ["<all_urls>"],
   main() {
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg?.type === Msg.PING) {
+        sendResponse({ pong: true });
+        return true;
+      }
       if (msg?.type === Msg.COLLECT_REGIONS) {
         const vp = { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio };
         const map = new Map<number, Element>();

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   RegionListSchema, RedactionManifestSchema, AgentActionSchema,
-  ServerRequestSchema, ServerResponseSchema,
+  ServerRequestSchema, ServerResponseSchema, RedactedRegionSchema,
 } from "./contracts.js";
 
 describe("contracts", () => {
@@ -36,5 +36,23 @@ describe("contracts", () => {
     const req = { task: "do x", image_b64: "AAAA", manifest: { schema: "sentrylens-redaction/1.0", image: { w: 1, h: 1, dpr: 1 }, regions: [], notes: "n" }, history: [] };
     expect(ServerRequestSchema.parse(req).task).toBe("do x");
     expect(ServerResponseSchema.parse({ action: { type: "done", answer: "a", thought: "t" } }).action.type).toBe("done");
+  });
+});
+
+describe("RedactedRegionSchema", () => {
+  it("accepts BYSTANDER_SCREEN category and detector provenance", () => {
+    const region = {
+      id: 10001,
+      bbox: [0, 0, 100, 100] as const,
+      kind: "redacted" as const,
+      category: "BYSTANDER_SCREEN",
+      placeholder: "BYSTANDER_SCREEN#1",
+      value_len: null,
+      risk: "medium" as const,
+      style: "blackbox" as const,
+      task_necessary: false,
+      detected_by: ["detector"],
+    };
+    expect(RedactedRegionSchema.safeParse(region).success).toBe(true);
   });
 });

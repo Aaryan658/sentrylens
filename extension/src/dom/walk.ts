@@ -59,7 +59,27 @@ export function walkDom(url: string, viewport: { w: number; h: number; dpr: numb
 
 export interface DomSensitiveHit {
   bbox: [number, number, number, number];
-  category: "PASSWORD" | "EMAIL" | "PHONE_NUMBER" | "CREDIT_CARD" | "OTHER";
+  category: "PASSWORD" | "EMAIL" | "PHONE_NUMBER" | "CREDIT_CARD" | "PERSON_NAME" | "OTHER";
+}
+
+// The on-device NER model is unreliable on OCR'd "label value" text — a
+// person's name right next to a field label like "Operator" (no punctuation
+// between them) is exactly the pattern it misses most, because that's how a
+// table row reads once OCR flattens it to plain text. DOM structure still
+// has the label/value boundary the pixels lost, so for this narrow, common
+// "profile/roster table" shape we flag the value deterministically instead
+// of depending on vision. This is a fallback net, not a replacement for NER —
+// it only fires for table rows whose first cell is a known person-label.
+const PERSON_LABELS = new Set([
+  "operator", "name", "full name", "employee", "employee name", "patient",
+  "patient name", "owner", "contact", "contact name", "signed by",
+  "authorized by", "reported by", "assigned to", "customer", "customer name",
+  "user", "account holder", "cardholder", "cardholder name", "passenger",
+  "applicant", "student", "student name", "next of kin",
+]);
+
+function isPersonLabel(text: string): boolean {
+  return PERSON_LABELS.has(text.trim().toLowerCase().replace(/:\s*$/, ""));
 }
 
 export function domSensitiveRegions(): DomSensitiveHit[] {
@@ -74,7 +94,13 @@ export function domSensitiveRegions(): DomSensitiveHit[] {
     else if (el.type === "email" || ac === "email") push(el, "EMAIL");
     else if (el.type === "tel" || ac === "tel") push(el, "PHONE_NUMBER");
     else if (ac.startsWith("cc-")) push(el, "CREDIT_CARD");
+    else if (ac === "username") push(el, "PERSON_NAME");
   }
   for (const el of Array.from(document.querySelectorAll("[data-sensitive]"))) push(el, "OTHER");
+  for (const row of Array.from(document.querySelectorAll("tr"))) {
+    const cells = Array.from(row.querySelectorAll("td,th"));
+    if (cells.length < 2) continue;
+    if (isPersonLabel(cells[0]!.textContent ?? "")) push(cells[1]!, "PERSON_NAME");
+  }
   return hits;
 }

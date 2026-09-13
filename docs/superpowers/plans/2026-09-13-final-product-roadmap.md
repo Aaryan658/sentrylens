@@ -43,7 +43,7 @@ this week, sequence by risk/value.
 ## Status
 
 - [x] 1. Housekeeping + yolos wiring — done (7 commits, 85/85 tests, clean typecheck; live-Chrome smoke check for BYSTANDER_SCREEN left as a manual step, see plan Task 5 Step 3)
-- [ ] 2. Eval harness
+- [x] 2. Eval harness — done (`extension/eval/`, `docs/EVAL_RESULTS.md`). First run found a real gap: 33.3% leakage (3/9), all misses the shape "Initial. Surname" in prose (not a DOM table) — NER doesn't reliably tag it outside the table-row fallback. Not yet fixed; flagged for a follow-up.
 - [ ] 3. Review overlay
 - [ ] 4. Policy layer
 - [ ] 5. Deployment + connectivity hardening

@@ -31,6 +31,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       let ocr = { words: [] as { text: string; bbox: [number, number, number, number] }[], joined: "", offsets: [] as number[] };
       let nerSpans: { category: PiiCategory; value: string; start: number; end: number }[] = [];
       let faces: [number, number, number, number][] = [];
+      let detections: { label: string; bbox: [number, number, number, number]; score: number }[] = [];
       let screenSummaryText = "";
 
       // Each model is independent — one failing (or *hanging*: a wasm worker that
@@ -56,10 +57,11 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         faces = await runFaces(bmp);
       }, { ms: 15000 });
-      // yolos-tiny is a generic COCO detector, not a PII signal — supplementary
-      // only, and its transformers.js API keeps shifting. Never let it degrade
-      // the privacy result.
-      await tryStep("detector", async () => { await initDetector(device); await runDetector(png); }, { optional: true });
+      // yolos-tiny is a generic COCO detector, not a PII signal on its own —
+      // supplementary, and its transformers.js API keeps shifting. Never let
+      // it degrade the privacy result; its output only adds BYSTANDER_SCREEN
+      // regions and a fallback FACE box (see fuse.ts), it never removes one.
+      await tryStep("detector", async () => { await initDetector(device); detections = await runDetector(png); }, { optional: true });
 
       // SmolVLM screen summary is WebGPU-only and optional — skipped silently
       // (with a degraded notice already covering the rest) if it cannot load or
@@ -88,6 +90,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
         nerSpans,
         degraded,
         mapping: session,
+        detectorBoxes: detections,
       });
 
       const redacted = manifest.regions.filter((r) => r.kind === "redacted");

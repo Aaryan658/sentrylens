@@ -8,7 +8,8 @@
     "build": "node scripts/vendor-runtimes.mjs && wxt build",
     "postinstall": "wxt prepare",
     "typecheck": "wxt prepare && tsc --noEmit",
-    "e2e": "node e2e/run.mjs"
+    "e2e": "node e2e/run.mjs",
+    "eval": "node eval/run.mjs"
   },
   "dependencies": {
     "@sentrylens/shared": "workspace:*",

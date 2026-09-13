@@ -39,10 +39,78 @@ export async function disposeNer(): Promise<void> {
 
 export interface NerSpan { category: PiiCategory; value: string; start: number; end: number }
 
+export interface RawNerToken {
+  entity?: string;
+  entity_group?: string;
+  score: number;
+  word: string;
+  start?: number;
+  end?: number;
+}
+
 // The PII-NER model has a bounded context (~512 tokens). A whole screen's worth
 // of OCR text overflows it and throws, which would flag the run as degraded — so
 // window the text and isolate each chunk's failure.
 const NER_WINDOW = 1500;
+
+// transformers.js@3.7.1's TokenClassificationPipeline does not implement
+// aggregation_strategy (start/end are literally TODOs in its source) — it
+// returns one raw, unmerged prediction per wordpiece with no offsets. Passing
+// aggregation_strategy was therefore a silent no-op: entity_group/start/end
+// were always undefined, so `chunk.slice(e.start, e.end)` returned the WHOLE
+// chunk for every hit. That inflated span then either mis-masked huge regions
+// or — since the model also tags most tokens "O" once real screen text has
+// mixed numbers/labels around a name — produced zero spans entirely, e.g.
+// "Operator A. Menon" in real screen text yielded no NER hits at all and the
+// name leaked unmasked. This reconstructs offsets ourselves and merges
+// adjacent same-category wordpieces (the model's B-/I- tagging is unreliable
+// here, so we merge on proximity + matching category rather than trusting
+// BIO prefixes).
+const MERGE_GAP = 3;
+
+export function mergeNerTokens(tokens: RawNerToken[], chunk: string, base: number): NerSpan[] {
+  const spans: NerSpan[] = [];
+  let cursor = 0;
+  let current: { category: PiiCategory; start: number; end: number } | null = null;
+
+  const flush = () => {
+    if (current) {
+      spans.push({ category: current.category, value: chunk.slice(current.start, current.end), start: base + current.start, end: base + current.end });
+      current = null;
+    }
+  };
+
+  for (const t of tokens) {
+    let tokenStart: number, tokenEnd: number;
+    if (typeof t.start === "number" && typeof t.end === "number") {
+      tokenStart = t.start;
+      tokenEnd = t.end;
+    } else {
+      const word = (t.word ?? "").trim();
+      if (!word) continue;
+      let idx = chunk.indexOf(word, cursor);
+      if (idx === -1) idx = chunk.toLowerCase().indexOf(word.toLowerCase(), cursor);
+      if (idx === -1) continue; // can't place this wordpiece — drop rather than risk a bogus span
+      tokenStart = idx;
+      tokenEnd = idx + word.length;
+    }
+    cursor = Math.max(cursor, tokenEnd);
+
+    const key = (t.entity_group ?? t.entity ?? "").toUpperCase().replace(/^[BI]-/, "").replace(/[^A-Z0-9]/g, "");
+    const category = LABEL_MAP[key];
+
+    if (!category || t.score < 0.5) { flush(); continue; }
+
+    if (current && current.category === category && tokenStart - current.end <= MERGE_GAP) {
+      current.end = tokenEnd;
+    } else {
+      flush();
+      current = { category, start: tokenStart, end: tokenEnd };
+    }
+  }
+  flush();
+  return spans;
+}
 
 export async function runNer(text: string): Promise<NerSpan[]> {
   if (!ner || !text.trim()) return [];
@@ -60,20 +128,14 @@ export async function runNer(text: string): Promise<NerSpan[]> {
     const base = bounds[i]!;
     const chunk = text.slice(base, bounds[i + 1]!);
     if (!chunk.trim()) continue;
-    let out: Array<{ entity_group?: string; entity?: string; start: number; end: number; score: number }>;
+    let out: RawNerToken[];
     try {
-      out = await ner(chunk, { aggregation_strategy: "simple" });
+      out = await ner(chunk);
     } catch (e) {
       console.warn("[sentrylens] ner chunk failed:", e);
       continue;
     }
-    for (const e of out) {
-      if (e.score < 0.5) continue;
-      const key = (e.entity_group ?? e.entity ?? "").toUpperCase().replace(/^[BI]-/, "").replace(/[^A-Z0-9]/g, "");
-      const category = LABEL_MAP[key];
-      if (!category) continue;
-      spans.push({ category, value: chunk.slice(e.start, e.end), start: base + e.start, end: base + e.end });
-    }
+    spans.push(...mergeNerTokens(out, chunk, base));
   }
   return spans;
 }

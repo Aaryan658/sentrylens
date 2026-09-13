@@ -44,6 +44,52 @@ describe("fuseRegions", () => {
     const out = fuseRegions({ ...empty, faces: [[0, 0, 10, 10]], pageSensitive: true });
     expect(out[0]!.confidence).toBeGreaterThanOrEqual(0.9);
   });
+
+  it("redacts a detected cell phone / laptop / tv as BYSTANDER_SCREEN", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      detectorBoxes: [
+        { label: "cell phone", bbox: [400, 40, 60, 100], score: 0.8 },
+        { label: "laptop", bbox: [10, 200, 120, 80], score: 0.7 },
+        { label: "chair", bbox: [0, 0, 20, 20], score: 0.9 }, // irrelevant label, ignored
+      ],
+    };
+    const out = fuseRegions(inp);
+    const bystander = out.filter((r) => r.category === "BYSTANDER_SCREEN");
+    expect(bystander).toHaveLength(2);
+    expect(bystander.every((r) => r.detected_by.includes("detector"))).toBe(true);
+  });
+
+  it("drops a low-confidence detector box", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      detectorBoxes: [{ label: "cell phone", bbox: [0, 0, 10, 10], score: 0.4 }],
+    };
+    expect(fuseRegions(inp).filter((r) => r.category === "BYSTANDER_SCREEN")).toHaveLength(0);
+  });
+
+  it("uses a detected person as a fallback FACE region only when MediaPipe found none", () => {
+    const withFallback = fuseRegions({
+      ...empty,
+      faces: [],
+      detectorBoxes: [{ label: "person", bbox: [50, 50, 80, 120], score: 0.7 }],
+    });
+    expect(withFallback.filter((r) => r.category === "FACE")).toHaveLength(1);
+    expect(withFallback[0]!.detected_by).toEqual(["detector"]);
+
+    const withoutFallback = fuseRegions({
+      ...empty,
+      faces: [[50, 50, 40, 40]],
+      detectorBoxes: [{ label: "person", bbox: [50, 50, 80, 120], score: 0.7 }],
+    });
+    // one real MediaPipe face, no extra region from the redundant person box
+    expect(withoutFallback.filter((r) => r.category === "FACE")).toHaveLength(1);
+    expect(withoutFallback[0]!.detected_by).toEqual(["face"]);
+  });
+
+  it("ignores a person box when no faces and no detector boxes are given (default empty array)", () => {
+    expect(fuseRegions(empty).filter((r) => r.category === "FACE")).toHaveLength(0);
+  });
 });
 
 describe("classify", () => {

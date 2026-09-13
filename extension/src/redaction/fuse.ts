@@ -27,9 +27,15 @@ function wordsForSpan(inp: PerceptionInputs, start: number, end: number, value?:
 const PREC: PiiCategory[] = [
   "PASSWORD", "AADHAAR", "CREDIT_CARD", "PAN", "API_KEY", "GOV_ID", "IFSC",
   "BANK_ACCOUNT", "EMAIL", "PHONE_NUMBER", "DOB", "ADDRESS", "PERSON_NAME",
-  "IP_ADDRESS", "FACE", "OTHER",
+  "IP_ADDRESS", "FACE", "BYSTANDER_SCREEN", "OTHER",
 ];
 const prec = (c: PiiCategory) => { const i = PREC.indexOf(c); return i < 0 ? PREC.length : i; };
+
+// COCO classes yolos-tiny can report that indicate someone else's device
+// (and possibly their own screen) is visible in frame — not PII itself, but
+// a privacy-relevant redaction the DOM/OCR/face signals can't catch.
+const BYSTANDER_LABELS = new Set(["cell phone", "laptop", "tv"]);
+const DETECTOR_MIN_SCORE = 0.5;
 
 export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
   const raw: SensitiveRegion[] = [];
@@ -38,6 +44,19 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
 
   for (const f of inp.faces) {
     raw.push({ bbox: f, category: "FACE", value: null, confidence: inp.pageSensitive ? 0.95 : 0.8, detected_by: ["face"] });
+  }
+
+  // yolos-tiny is supplementary: bystander devices are never a PII source of
+  // truth (no value to redact, positional-only), and a detected person only
+  // fills in when MediaPipe found zero faces — it must never double-count a
+  // face MediaPipe already caught.
+  for (const d of inp.detectorBoxes ?? []) {
+    if (d.score < DETECTOR_MIN_SCORE) continue;
+    if (BYSTANDER_LABELS.has(d.label)) {
+      raw.push({ bbox: d.bbox, category: "BYSTANDER_SCREEN", value: null, confidence: d.score, detected_by: ["detector"] });
+    } else if (d.label === "person" && inp.faces.length === 0) {
+      raw.push({ bbox: d.bbox, category: "FACE", value: null, confidence: Math.min(0.6, d.score), detected_by: ["detector"] });
+    }
   }
 
   for (const span of inp.nerSpans) {

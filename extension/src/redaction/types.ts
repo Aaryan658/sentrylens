@@ -1,6 +1,6 @@
 import type { BBox, PiiCategory, Region } from "@sentrylens/shared";
 
-export type DetectedBy = "dom" | "ocr+ner" | "regex" | "face";
+export type DetectedBy = "dom" | "ocr+ner" | "regex" | "face" | "detector";
 
 export interface SensitiveRegion {
   bbox: BBox;
@@ -8,6 +8,12 @@ export interface SensitiveRegion {
   value: string | null;          // null for FACE
   confidence: number;            // 0..1
   detected_by: DetectedBy[];
+}
+
+export interface DetectorBox {
+  label: string;
+  bbox: BBox;
+  score: number;
 }
 
 export interface PerceptionInputs {
@@ -19,4 +25,5 @@ export interface PerceptionInputs {
   ocrJoined: string;             // ocrWords joined by " " (offsets align to nerSpans)
   ocrOffsets: number[];          // start offset of each word in ocrJoined
   pageSensitive: boolean;
+  detectorBoxes?: DetectorBox[]; // yolos-tiny COCO boxes, image px; optional, defaults to []
 }

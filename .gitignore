@@ -16,3 +16,6 @@ dist/
 
 # Claude Code local session logs
 .claude/logs/
+
+# local-only demo assets (real photos etc.) — never published
+demo/assets/

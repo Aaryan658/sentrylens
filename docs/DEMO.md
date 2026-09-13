@@ -76,14 +76,14 @@ Expected:
   it locally before it reaches the page) → **click** Sign in → `done`.
 - Each card's **"What the server saw"** shows the **masked** screenshot and the
   manifest JSON. The manifest contains `PASSWORD#…`, `EMAIL#…`, `PHONE_NUMBER#…`,
-  `PAN#…`, `FACE#1` — and **no raw values**.
+  `PAN#…`, `AADHAAR#…`, `CREDIT_CARD#…`, `FACE#1` — and **no raw values**.
 - The **Network** list shows only `localhost:8787` rows.
 
 ## 6. Leak check (the privacy claim, in Chrome)
 
 1. Expand every step's manifest. Use the browser find (Ctrl+F) on the side panel
-   for each of: `Menon`, `9000000000`, `ABCDE1234F`, `ops.lead@vssc.test`.
-   **Zero matches** anywhere in the panel.
+   for each of: `Menon`, `9000000000`, `ABCDE1234F`, `ops.lead@vssc.test`,
+   `4321 5678 9003`, `4111 1111 1111 1111`. **Zero matches** anywhere in the panel.
 2. In the offscreen DevTools **Network** tab, confirm the only cross-origin
    requests are model-weight fetches to `huggingface.co` / `cdn.jsdelivr.net` /
    `storage.googleapis.com` — never to the server host with PII in the body.

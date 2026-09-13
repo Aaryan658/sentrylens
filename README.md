@@ -59,7 +59,7 @@ Research and design rationale: `SIH26171_Deep_Research_Report.md`,
 
 | Command | What it proves |
 |---|---|
-| `pnpm test` | 60 unit tests — contracts, Luhn/Verhoeff, mapping determinism + OCR-noise tolerance, signal fusion, manifest no-leak, mask planning, server parse/mock/endpoint, DOM walk, executor, agent loop, firewall rules |
+| `pnpm test` | 85 unit tests — contracts, Luhn/Verhoeff, mapping determinism + OCR-noise tolerance, signal fusion, manifest no-leak, mask planning, server parse/mock/endpoint, DOM walk, executor, agent loop, firewall rules |
 | `pnpm typecheck` | strict TS across `shared` / `server` / `extension` |
 | `pnpm --filter @sentrylens/extension e2e` | **headless end-to-end**: real tesseract OCR + real transformers NER → `assemblePerception` → real pixel masking (sharp) → mock server round-trip; asserts no raw PII in the manifest, the request body, **or the sanitised image pixels**. Needs the server up on `:8787`. Set `E2E_VLM=1` (server in `MOCK=0`) to exercise a real VLM. |
 

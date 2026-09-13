@@ -10,7 +10,7 @@
   button{margin-top:12px;padding:8px 14px;border:0;border-radius:6px;background:#2e73c7;color:#fff;cursor:pointer}
   table{border-collapse:collapse;width:100%}
   td,th{border:1px solid #26415f;padding:8px;text-align:left}
-  .avatar{width:48px;height:48px;border-radius:50%;background:#8899aa;display:inline-block}
+  .avatar{width:48px;height:48px;border-radius:50%;background:#8899aa;display:inline-block;object-fit:cover}
   [hidden]{display:none}
 </style></head>
 <body>
@@ -33,7 +33,9 @@
       <tr><td>Phone</td><td>9000000000</td></tr>
       <tr><td>Email</td><td>ops.lead@vssc.test</td></tr>
       <tr><td>PAN</td><td>ABCDE1234F</td></tr>
-      <tr><td>Photo</td><td><span class="avatar" data-sensitive></span></td></tr>
+      <tr><td>Aadhaar</td><td>4321 5678 9003</td></tr>
+      <tr><td>Payroll card</td><td>4111 1111 1111 1111</td></tr>
+      <tr><td>Photo</td><td><img class="avatar" src="assets/roster-photo.png" alt="" data-sensitive onerror="this.outerHTML='&lt;span class=&quot;avatar&quot; data-sensitive&gt;&lt;/span&gt;'"></td></tr>
     </table>
     <button id="open-report">Open VSSC-03 report</button>
   </section>

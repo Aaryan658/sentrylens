@@ -42,7 +42,7 @@ this week, sequence by risk/value.
 
 ## Status
 
-- [ ] 1. Housekeeping + yolos wiring — plan written, ready to execute
+- [x] 1. Housekeeping + yolos wiring — done (7 commits, 85/85 tests, clean typecheck; live-Chrome smoke check for BYSTANDER_SCREEN left as a manual step, see plan Task 5 Step 3)
 - [ ] 2. Eval harness
 - [ ] 3. Review overlay
 - [ ] 4. Policy layer

@@ -4,6 +4,7 @@ import { classify, type ClassifiedRegion } from "../redaction/classify.js";
 import { buildManifest, type ElementInput } from "../redaction/manifest.js";
 import { MappingTable } from "../redaction/mapping.js";
 import { viewportToImage } from "../redaction/geometry.js";
+import type { DetectorBox } from "../redaction/types.js";
 
 export interface AssembleArgs {
   task: string;
@@ -17,6 +18,7 @@ export interface AssembleArgs {
   nerSpans: { category: PiiCategory; value: string; start: number; end: number }[];
   degraded: boolean;
   mapping?: MappingTable;
+  detectorBoxes?: DetectorBox[];
 }
 
 export interface AssembleResult {
@@ -45,6 +47,7 @@ export function assemblePerception(args: AssembleArgs): AssembleResult {
     ocrJoined: args.ocrJoined,
     ocrOffsets: args.ocrOffsets,
     pageSensitive: args.domSensitive.some((d) => d.category === "PASSWORD"),
+    detectorBoxes: args.detectorBoxes,
   });
 
   const classified = fused.map((r) => classify(r, args.task, domRegionsImg));

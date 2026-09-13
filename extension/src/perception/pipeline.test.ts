@@ -22,4 +22,22 @@ describe("assemblePerception", () => {
     const emailRegion = result.manifest.regions.find((r) => r.kind === "redacted" && r.category === "EMAIL") as any;
     expect(result.mapping.resolve(emailRegion.placeholder)).toBe("ops@vssc.test");
   });
+
+  it("passes detectorBoxes through to fusion as BYSTANDER_SCREEN", () => {
+    const result = assemblePerception({
+      task: "open the report",
+      image: { w: 200, h: 200, dpr: 1 },
+      domRegions: [],
+      domSensitive: [],
+      faces: [],
+      ocrWords: [],
+      ocrJoined: "",
+      ocrOffsets: [],
+      nerSpans: [],
+      degraded: false,
+      detectorBoxes: [{ label: "laptop", bbox: [10, 10, 50, 40], score: 0.9 }],
+    });
+    const cats = result.classified.map((r) => r.category);
+    expect(cats).toEqual(["BYSTANDER_SCREEN"]);
+  });
 });

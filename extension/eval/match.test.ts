@@ -25,4 +25,8 @@ describe("matchValue", () => {
   it("rejects a text mismatch", () => {
     expect(matchValue("R. Iyer", "K. Bhatt", "PERSON_NAME")).toBe(false);
   });
+
+  it("matches a name despite OCR misreading capital I as lowercase l", () => {
+    expect(matchValue("R. lyer", "R. Iyer", "PERSON_NAME")).toBe(true);
+  });
 });

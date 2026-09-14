@@ -125,7 +125,13 @@ export const FIXTURES: EvalFixture[] = [
       "Amount Rs 12000 pending confirmation",
     ]),
     domRegions: [
-      { id: 1, bbox: [24, 120, 200, 26], source: "dom", role: "button", name: "Submit payment", interactable: true },
+      // classify()'s task_necessary check requires an element whose bbox is
+      // near/overlapping the redacted region AND whose name shares a task
+      // token — it's spatial proximity, not "value appears in the task
+      // string". This line-level region (same row as "M. Rao") makes that
+      // condition real instead of assuming it.
+      { id: 1, bbox: [24, 24, 600, 30], source: "dom", role: "text", name: "Approve payment for operator", interactable: false },
+      { id: 2, bbox: [24, 120, 200, 26], source: "dom", role: "button", name: "Submit payment", interactable: true },
     ],
     domSensitive: [],
     groundTruth: [{ category: "PERSON_NAME", value: "M. Rao", taskNecessary: true }],

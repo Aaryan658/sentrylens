@@ -1,4 +1,5 @@
 import type { RegionList, Region } from "@sentrylens/shared";
+import { PERSON_LABELS as PERSON_LABEL_LIST } from "../redaction/personLabels.js";
 
 export const INTERACTABLE_SELECTOR =
   "a[href],button,input,select,textarea,[role=button],[role=link],[role=textbox],[contenteditable=true]";
@@ -70,13 +71,9 @@ export interface DomSensitiveHit {
 // "profile/roster table" shape we flag the value deterministically instead
 // of depending on vision. This is a fallback net, not a replacement for NER —
 // it only fires for table rows whose first cell is a known person-label.
-const PERSON_LABELS = new Set([
-  "operator", "name", "full name", "employee", "employee name", "patient",
-  "patient name", "owner", "contact", "contact name", "signed by",
-  "authorized by", "reported by", "assigned to", "customer", "customer name",
-  "user", "account holder", "cardholder", "cardholder name", "passenger",
-  "applicant", "student", "student name", "next of kin",
-]);
+// The label list itself lives in redaction/personLabels.ts, shared with the
+// OCR-text equivalent (redaction/names.ts) for screens with no real DOM table.
+const PERSON_LABELS = new Set(PERSON_LABEL_LIST);
 
 function isPersonLabel(text: string): boolean {
   return PERSON_LABELS.has(text.trim().toLowerCase().replace(/:\s*$/, ""));

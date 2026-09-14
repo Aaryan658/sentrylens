@@ -1,6 +1,7 @@
 import type { PiiCategory } from "@sentrylens/shared";
 import { iou, unionBox } from "./geometry.js";
 import { findStructuredPii } from "./validators.js";
+import { findLabeledNames } from "./names.js";
 import type { PerceptionInputs, SensitiveRegion } from "./types.js";
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9@.]/g, "");
@@ -69,6 +70,16 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
     const boxes = wordsForSpan(inp, hit.start, hit.end);
     if (boxes.length === 0) continue;
     raw.push({ bbox: unionBox(boxes), category: hit.category, value: hit.value, confidence: 0.9, detected_by: ["regex"] });
+  }
+
+  // Deterministic backstop for the NER model's inconsistent recall on
+  // "Initial. Surname"-shaped names in OCR text (see names.ts). Runs after
+  // findStructuredPii so a genuine NER/regex hit on the same span (IoU>0.6,
+  // deduped below) still wins precedence via PREC — this only fills gaps.
+  for (const hit of findLabeledNames(inp.ocrJoined)) {
+    const boxes = wordsForSpan(inp, hit.start, hit.end, hit.value);
+    if (boxes.length === 0) continue;
+    raw.push({ bbox: unionBox(boxes), category: hit.category, value: hit.value, confidence: 0.7, detected_by: ["regex"] });
   }
 
   const out: SensitiveRegion[] = [];

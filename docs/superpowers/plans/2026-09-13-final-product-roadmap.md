@@ -43,7 +43,7 @@ this week, sequence by risk/value.
 ## Status
 
 - [x] 1. Housekeeping + yolos wiring — done (7 commits, 85/85 tests, clean typecheck; live-Chrome smoke check for BYSTANDER_SCREEN left as a manual step, see plan Task 5 Step 3)
-- [x] 2. Eval harness — done (`extension/eval/`, `docs/EVAL_RESULTS.md`). First run found a real gap: 33.3% leakage (3/9), all misses the shape "Initial. Surname" in prose (not a DOM table) — NER doesn't reliably tag it outside the table-row fallback. Not yet fixed; flagged for a follow-up.
+- [x] 2. Eval harness — done (`extension/eval/`, `docs/EVAL_RESULTS.md`). First run found a real gap: 33.3% leakage (3/9), all misses the shape "Initial. Surname" in prose (not a DOM table) — NER doesn't reliably tag it outside the table-row fallback. **Fixed** (2026-09-14): root cause was the NER model's recall genuinely collapsing on this shape (confirmed via live probe), not a merge-logic bug — added `redaction/names.ts`, an OCR-text label+name heuristic mirroring the DOM table-row fallback. Also caught and fixed an OCR I/l homoglyph issue and a wrong fixture assumption along the way. Current numbers: 0.0% leakage, 0.0% over-masking, 100% task-necessity accuracy (all 5 fixtures).
 - [ ] 3. Review overlay
 - [ ] 4. Policy layer
 - [ ] 5. Deployment + connectivity hardening

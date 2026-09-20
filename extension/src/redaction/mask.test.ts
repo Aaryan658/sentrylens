@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planMasks } from "./mask.js";
+import { planMasks, MASK_PAD } from "./mask.js";
 import type { RedactedRegion } from "@sentrylens/shared";
 
 const region = (over: Partial<RedactedRegion> = {}): RedactedRegion => ({
@@ -9,11 +9,31 @@ const region = (over: Partial<RedactedRegion> = {}): RedactedRegion => ({
 });
 
 describe("planMasks", () => {
-  it("emits exactly one covering op per redacted region", () => {
-    const ops = planMasks([region(), region({ id: 10_001, bbox: [0, 0, 5, 5] })]);
+  it("emits exactly one op per redacted region, each covering its whole bbox", () => {
+    const regions = [region(), region({ id: 10_001, bbox: [0, 0, 5, 5] })];
+    const ops = planMasks(regions);
     expect(ops).toHaveLength(2);
-    expect(ops[0]!.bbox).toEqual([10, 20, 80, 16]);
-    expect(ops[1]!.bbox).toEqual([0, 0, 5, 5]);
+    ops.forEach((op, i) => {
+      const [rx, ry, rw, rh] = regions[i]!.bbox;
+      const [ox, oy, ow, oh] = op.bbox;
+      expect(ox).toBeLessThanOrEqual(rx);
+      expect(oy).toBeLessThanOrEqual(ry);
+      expect(ox + ow).toBeGreaterThanOrEqual(rx + rw);
+      expect(oy + oh).toBeGreaterThanOrEqual(ry + rh);
+    });
+  });
+
+  it("pads each mask by MASK_PAD px so glyph edges outside a tight OCR box do not show", () => {
+    expect(planMasks([region()])[0]!.bbox).toEqual([10 - MASK_PAD, 20 - MASK_PAD, 80 + 2 * MASK_PAD, 16 + 2 * MASK_PAD]);
+  });
+
+  it("never pads a mask off the top or left edge of the image", () => {
+    const [x, y, w, h] = planMasks([region({ bbox: [1, 0, 20, 10] })])[0]!.bbox;
+    expect(x).toBe(0);
+    expect(y).toBe(0);
+    // still covers the original right/bottom edges
+    expect(x + w).toBeGreaterThanOrEqual(21);
+    expect(y + h).toBeGreaterThanOrEqual(10);
   });
 
   it("blackbox -> solid fill, pixelate/blur -> pixelate fill", () => {

@@ -15,6 +15,13 @@ export interface MaskOp {
 export const MASK_COLOR = "#0A0A0A";
 
 /**
+ * Each mask is grown by this many px on every side. OCR and DOM boxes hug the
+ * text, so anti-aliased glyph edges and descenders just outside the box would
+ * otherwise show as slivers under or beside a mask.
+ */
+export const MASK_PAD = 3;
+
+/**
  * Pure planning step: decide, for each redacted region, what gets painted.
  * Every redacted region yields exactly one MaskOp that fully covers its bbox,
  * so nothing behind a redacted region can survive into the sanitised image.
@@ -23,8 +30,13 @@ export const MASK_COLOR = "#0A0A0A";
 export function planMasks(regions: RedactedRegion[]): MaskOp[] {
   return regions.map((r) => {
     const soft = r.style === "blur" || r.style === "pixelate";
+    const [x, y, w, h] = r.bbox;
+    // Clamp at the top/left edge while still covering the original right/bottom
+    // edge; the canvas clips anything past the bottom/right on its own.
+    const left = Math.max(0, x - MASK_PAD);
+    const top = Math.max(0, y - MASK_PAD);
     return {
-      bbox: r.bbox,
+      bbox: [left, top, x + w + MASK_PAD - left, y + h + MASK_PAD - top],
       fill: soft ? "pixelate" : "solid",
       block: r.style === "blur" ? 8 : 12,
       label: r.placeholder,

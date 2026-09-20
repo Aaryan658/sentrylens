@@ -51,6 +51,16 @@ describe("findLabeledNames", () => {
     expect(hits[0]!.value).toBe("R. lyer");
   });
 
+  it("does not take the next form field's label as a name (was masking 'Operator ID Password' as a person)", () => {
+    expect(findLabeledNames("Operator sign-in Operator ID Password Duty roster")).toHaveLength(0);
+  });
+
+  it("does not let a trailing field label ride along on a real name", () => {
+    const hits = findLabeledNames("Operator Anita Phone 9123456780");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.value).toBe("Anita");
+  });
+
   it("handles a label with a trailing colon", () => {
     const hits = findLabeledNames("Patient: Meera Nair");
     expect(hits).toHaveLength(1);

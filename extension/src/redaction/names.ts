@@ -20,6 +20,13 @@ const LABEL_RE = new RegExp(`\\b(?:${LABEL_ALT})\\b\\s*:?\\s*`, "gi");
 // starting with a lone "l" is, in practice, almost always a misread "I".
 const NAME_RE = /^[A-Zl][a-zA-Z]*\.?(?:\s+[A-Zl][a-zA-Z]*\.?){0,1}/;
 
+// Words that name a form field, not a person. Deliberately short and limited to
+// words that are not plausible surnames (so no "Pan", "Contact", "Name").
+const FIELD_WORDS = new Set([
+  "id", "password", "pwd", "passcode", "field", "value", "phone", "mobile", "email",
+  "aadhaar", "aadhar", "address", "dob", "account", "card", "ifsc", "token", "secret", "login",
+]);
+
 /**
  * Deterministic backstop for the on-device NER model's inconsistent recall
  * on "Initial. Surname"-shaped names: a live probe against
@@ -39,9 +46,16 @@ export function findLabeledNames(text: string): StructuredHit[] {
     const afterLabel = m.index + m[0].length;
     const nm = NAME_RE.exec(text.slice(afterLabel));
     if (!nm) continue;
-    const value = nm[0].trim();
-    if (!value) continue;
-    hits.push({ category: "PERSON_NAME" as PiiCategory, value, start: afterLabel, end: afterLabel + nm[0].length });
+    // OCR text has no field separators, so what follows a label can be the
+    // NEXT form field's label ("Operator ID Password"), not a name. Drop a
+    // leading field word (the whole hit is not a name) and trim a trailing one
+    // ("Anita Phone" -> "Anita").
+    const tokens = nm[0].trim().split(/\s+/);
+    while (tokens.length && FIELD_WORDS.has(tokens[tokens.length - 1]!.toLowerCase().replace(/[^a-z]/g, ""))) tokens.pop();
+    if (tokens.length === 0 || FIELD_WORDS.has(tokens[0]!.toLowerCase().replace(/[^a-z]/g, ""))) continue;
+    const value = tokens.join(" ");
+    const start = afterLabel + nm[0].indexOf(tokens[0]!);
+    hits.push({ category: "PERSON_NAME" as PiiCategory, value, start, end: start + value.length });
   }
   return hits;
 }

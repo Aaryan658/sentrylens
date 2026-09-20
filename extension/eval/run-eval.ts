@@ -20,6 +20,7 @@
  * Run:  pnpm --filter @sentrylens/extension eval
  * First run downloads model weights (same as the e2e harness).
  */
+import type { PiiCategory, BBox } from "@sentrylens/shared";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -27,17 +28,40 @@ import sharp from "sharp";
 import { runOcr, disposeOcr } from "../src/perception/ocr.js";
 import { runNer, initNer, disposeNer } from "../src/perception/ner.js";
 import { assemblePerception } from "../src/perception/pipeline.js";
+import { textLikelihoodRegions, type RawImage } from "../src/perception/text-likelihood.js";
+import { rescueBlindSpot } from "../src/perception/ocr-rescue.js";
+import { iou, mergeRowBoxes } from "../src/redaction/geometry.js";
 import { FIXTURES, type EvalFixture } from "./fixtures.js";
 import { matchValue } from "./match.js";
 
 interface FixtureResult {
   name: string;
   totalGroundTruth: number;
-  leaked: string[];              // ground-truth values with no matching redacted region
+  leaked: string[];              // ground-truth values with NO redacted region covering them at all
+  positionalCatches: string[];   // pixels WERE redacted (fail-closed heuristic), but no value confirmed
   overMasks: { category: string; placeholder: string }[];
+  /** value-less fail-closed boxes (text-likelihood backstop) of any kind in this fixture */
+  heuristicRegions: number;
+  /** ...of which sit on no ground-truth item: benign UI the backstop blacked out */
+  benignHeuristic: number;
   taskNecessityChecked: number;
   taskNecessityCorrect: number;
+  adversarial: boolean;
+  technique?: string;
 }
+
+/** Fraction of `inner`'s area that lies inside `outer` (0..1). */
+function insideFraction(inner: BBox, outer: BBox): number {
+  const w = Math.min(inner[0] + inner[2], outer[0] + outer[2]) - Math.max(inner[0], outer[0]);
+  const h = Math.min(inner[1] + inner[3], outer[1] + outer[3]) - Math.max(inner[1], outer[1]);
+  const area = inner[2] * inner[3];
+  return w > 0 && h > 0 && area > 0 ? (w * h) / area : 0;
+}
+
+// A heuristic box "covers" a ground-truth item when at least this much of the
+// box lies inside the item's on-screen band, so a box on the NEXT line, or one
+// that merely touches the band, does not count.
+const COVER_FRACTION = 0.5;
 
 async function runFixture(f: EvalFixture): Promise<FixtureResult> {
   const basePng = await sharp(Buffer.from(f.svg)).png().toBuffer();
@@ -45,6 +69,38 @@ async function runFixture(f: EvalFixture): Promise<FixtureResult> {
 
   const ocr = await runOcr(pngDataUrl);
   const nerSpans = await runNer(ocr.joined);
+
+  const { data, info } = await sharp(basePng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const textLikelihoodBoxes = textLikelihoodRegions({ data, width: info.width, height: info.height, channels: info.channels });
+
+  // Scoped second-pass rescue (see ocr-rescue.ts): only attempted on boxes
+  // the whole-image OCR pass already completely missed (0 overlap), using
+  // the SAME definition fuse.ts itself uses for "blind spot" — kept
+  // identical deliberately so this never rescues a box fuse.ts wouldn't
+  // otherwise fail-close, and never skips one it would.
+  const blindSpots = textLikelihoodBoxes.filter((box) => !ocr.words.some((w) => iou(w.bbox, box) > 0));
+  // Blind-spot boxes are frequently per-character/per-fragment (connected
+  // components split low-contrast text at glyph gaps) rather than one
+  // line box — merge same-row fragments first so the rescue crop has a
+  // full line of context, not an isolated 1-3 character sliver (see
+  // mergeRowBoxes's doc comment for the empirical evidence).
+  const rescueBoxes = mergeRowBoxes(blindSpots);
+  const rawImg = { data, width: info.width, height: info.height, channels: info.channels };
+  const rescueIo = {
+    encode: async (crop: RawImage) => {
+      const cropPng = await sharp(Buffer.from(crop.data.buffer, crop.data.byteOffset, crop.data.byteLength), {
+        raw: { width: crop.width, height: crop.height, channels: 4 },
+      }).png().toBuffer();
+      return `data:image/png;base64,${cropPng.toString("base64")}`;
+    },
+    ocr: runOcr,
+    ner: runNer,
+  };
+  const rescuedRegions: { bbox: BBox; category: PiiCategory; value: string }[] = [];
+  for (const box of rescueBoxes) {
+    const hit = await rescueBlindSpot(rawImg, box, rescueIo);
+    if (hit) rescuedRegions.push(hit);
+  }
 
   const meta = await sharp(basePng).metadata();
   const { manifest, mapping } = assemblePerception({
@@ -58,12 +114,24 @@ async function runFixture(f: EvalFixture): Promise<FixtureResult> {
     ocrOffsets: ocr.offsets,
     nerSpans,
     degraded: false,
+    textLikelihoodBoxes,
+    rescuedRegions,
   });
 
   const redacted = manifest.regions.filter((r) => r.kind === "redacted") as Extract<
     (typeof manifest.regions)[number],
     { kind: "redacted" }
   >[];
+
+  // EVAL_VERBOSE=1: dump every redacted region (fixtures are synthetic, so
+  // printing resolved values is safe here) to attribute over-masks and boxes.
+  if (process.env.EVAL_VERBOSE) {
+    console.log(`\n[${f.name}] ${redacted.length} redacted region(s)`);
+    for (const r of redacted) {
+      const v = r.value_len != null ? mapping.resolve(r.placeholder) : null;
+      console.log(`  ${r.category.padEnd(13)} ${r.detected_by.join("+").padEnd(16)} bbox=${r.bbox.map(Math.round).join(",").padEnd(18)} value=${JSON.stringify(v)}`);
+    }
+  }
 
   // Value-bearing redacted regions this fixture's ground truth could match
   // against (FACE/BYSTANDER_SCREEN carry no value — not applicable here).
@@ -73,68 +141,211 @@ async function runFixture(f: EvalFixture): Promise<FixtureResult> {
     .filter((r): r is { region: (typeof redacted)[number]; value: string } => r.value != null);
 
   const leaked: string[] = [];
+  const positionalCatches: string[] = [];
   let taskNecessityChecked = 0;
   let taskNecessityCorrect = 0;
   const claimed = new Set<string>(); // placeholders already matched to a ground-truth entry
+  // Fail-closed heuristic redactions (text-likelihood.ts) carry no value, so
+  // they can never satisfy the value-matching check above — but the pixels
+  // ARE genuinely redacted. A ground-truth item counts as positionally caught
+  // only if a heuristic box actually covers ITS pixels (bbox-level, see
+  // COVER_FRACTION), not merely because some heuristic box exists elsewhere
+  // in the fixture. Category is no longer always "OTHER" here (label-context.ts
+  // may infer a real category from a nearby legible label) so this must not
+  // filter on it.
+  const heuristics = redacted.filter((r) => r.detected_by.includes("heuristic"));
 
   for (const gt of f.groundTruth) {
     const hit = resolved.find(
       (r) => !claimed.has(r.region.placeholder) && r.region.category === gt.category && matchValue(r.value, gt.value, gt.category),
     );
-    if (!hit) { leaked.push(`${gt.category}:${gt.value}`); continue; }
-    claimed.add(hit.region.placeholder);
-    if (gt.taskNecessary !== undefined) {
-      taskNecessityChecked++;
-      if (hit.region.task_necessary === gt.taskNecessary) taskNecessityCorrect++;
+    if (hit) {
+      claimed.add(hit.region.placeholder);
+      if (gt.taskNecessary !== undefined) {
+        taskNecessityChecked++;
+        if (hit.region.task_necessary === gt.taskNecessary) taskNecessityCorrect++;
+      }
+      continue;
     }
+    const heuristicCatch = heuristics.find((r) => insideFraction(r.bbox, gt.bbox) >= COVER_FRACTION);
+    if (heuristicCatch) {
+      const inferredNote = heuristicCatch.category !== "OTHER" ? ` [category inferred: ${heuristicCatch.category}]` : "";
+      positionalCatches.push(`${gt.category}:${gt.value}${inferredNote}`);
+      continue;
+    }
+    leaked.push(`${gt.category}:${gt.value}`);
   }
 
   const overMasks = resolved
     .filter((r) => !claimed.has(r.region.placeholder))
     .map((r) => ({ category: r.region.category, placeholder: r.region.placeholder }));
 
-  return { name: f.name, totalGroundTruth: f.groundTruth.length, leaked, overMasks, taskNecessityChecked, taskNecessityCorrect };
+  // Over-masking of the backstop: value-less boxes that cover no ground-truth
+  // item. The value-bearing over-masking metric above never sees these.
+  const benignHeuristic = heuristics.filter(
+    (r) => !f.groundTruth.some((gt) => insideFraction(r.bbox, gt.bbox) >= COVER_FRACTION),
+  ).length;
+
+  return {
+    name: f.name,
+    totalGroundTruth: f.groundTruth.length,
+    leaked,
+    positionalCatches,
+    overMasks,
+    heuristicRegions: heuristics.length,
+    benignHeuristic,
+    taskNecessityChecked,
+    taskNecessityCorrect,
+    adversarial: f.adversarial ?? false,
+    technique: f.technique,
+  };
 }
 
 function renderReport(results: FixtureResult[]): string {
-  const totalGt = results.reduce((s, r) => s + r.totalGroundTruth, 0);
-  const totalLeaked = results.reduce((s, r) => s + r.leaked.length, 0);
-  const totalOverMasks = results.reduce((s, r) => s + r.overMasks.length, 0);
-  const totalRedactedValueBearing = totalGt - totalLeaked + totalOverMasks; // caught-correct + false-positive
-  const totalTnChecked = results.reduce((s, r) => s + r.taskNecessityChecked, 0);
-  const totalTnCorrect = results.reduce((s, r) => s + r.taskNecessityCorrect, 0);
+  const baseline = results.filter((r) => !r.adversarial);
+  const redteam = results.filter((r) => r.adversarial);
 
   const pct = (n: number, d: number) => (d === 0 ? "n/a" : `${((n / d) * 100).toFixed(1)}%`);
 
-  const rows = results
+  function aggregate(set: FixtureResult[]) {
+    const totalGt = set.reduce((s, r) => s + r.totalGroundTruth, 0);
+    const totalLeaked = set.reduce((s, r) => s + r.leaked.length, 0);
+    const totalOverMasks = set.reduce((s, r) => s + r.overMasks.length, 0);
+    const totalRedactedValueBearing = totalGt - totalLeaked + totalOverMasks;
+    const totalTnChecked = set.reduce((s, r) => s + r.taskNecessityChecked, 0);
+    const totalTnCorrect = set.reduce((s, r) => s + r.taskNecessityCorrect, 0);
+    const totalHeuristic = set.reduce((s, r) => s + r.heuristicRegions, 0);
+    const totalBenignHeuristic = set.reduce((s, r) => s + r.benignHeuristic, 0);
+    return { totalGt, totalLeaked, totalOverMasks, totalRedactedValueBearing, totalTnChecked, totalTnCorrect, totalHeuristic, totalBenignHeuristic };
+  }
+
+  const b = aggregate(baseline);
+
+  const rows = baseline
     .map(
       (r) =>
-        `| ${r.name} | ${r.totalGroundTruth} | ${r.totalGroundTruth - r.leaked.length}/${r.totalGroundTruth} | ${r.leaked.length ? r.leaked.join(", ") : "—"} | ${r.overMasks.length} | ${r.taskNecessityChecked ? `${r.taskNecessityCorrect}/${r.taskNecessityChecked}` : "—"} |`,
+        `| ${r.name} | ${r.totalGroundTruth} | ${r.totalGroundTruth - r.leaked.length}/${r.totalGroundTruth} | ${r.leaked.length ? r.leaked.join(", ") : "—"} | ${r.overMasks.length} | ${r.heuristicRegions} (${r.benignHeuristic} benign) | ${r.taskNecessityChecked ? `${r.taskNecessityCorrect}/${r.taskNecessityChecked}` : "—"} |`,
     )
+    .join("\n");
+
+  const redteamAttacksWithGt = redteam.filter((r) => r.totalGroundTruth > 0);
+  const attacksSucceeded = redteamAttacksWithGt.filter((r) => r.leaked.length > 0).length;
+  const redteamRows = redteam
+    .map((r) => {
+      const caught = r.totalGroundTruth - r.leaked.length - r.positionalCatches.length;
+      const result = r.leaked.length
+        ? `**LEAKED** (${r.leaked.join(", ")})`
+        : r.positionalCatches.length
+          ? `resisted — fail-closed (pixels redacted, value unconfirmed: ${r.positionalCatches.join(", ")})`
+          : "resisted";
+      return `| ${r.name} | ${r.technique} | ${caught}/${r.totalGroundTruth} | ${result} | ${r.overMasks.length} |`;
+    })
     .join("\n");
 
   return `# SentryLens eval results
 
 Generated by \`pnpm --filter @sentrylens/extension eval\` on ${new Date().toISOString().slice(0, 10)}
-against \`extension/eval/fixtures.ts\` (${results.length} synthetic fixtures) using the
-real on-device pipeline: tesseract.js OCR + \`onnx-community/multilang-pii-ner-ONNX\`
-NER (CPU device — the browser build uses wasm/webgpu) + \`assemblePerception\`.
+against \`extension/eval/fixtures.ts\` (${baseline.length} baseline + ${redteam.length} red-team
+fixtures) using the real on-device pipeline: tesseract.js OCR +
+\`onnx-community/multilang-pii-ner-ONNX\` NER (CPU device — the browser build
+uses wasm/webgpu) + \`assemblePerception\`.
 No literature numbers are cited below — every figure here was measured on
 this codebase, this run.
 
-## Aggregate
+## Aggregate (baseline fixtures)
 
 | Metric | Value | Definition |
 |---|---|---|
-| PII leakage rate | **${pct(totalLeaked, totalGt)}** (${totalLeaked}/${totalGt}) | ground-truth PII with no matching redacted region. Every redacted region's bbox is fully mask-painted (\`mask.test.ts\`), so "not redacted" = pixels reach the server unmasked. |
-| Over-masking rate | **${pct(totalOverMasks, totalRedactedValueBearing)}** (${totalOverMasks}/${totalRedactedValueBearing}) | value-bearing redacted regions that don't correspond to any ground-truth PII on that fixture (false-positive redaction of benign content). |
-| Task-necessity accuracy | **${pct(totalTnCorrect, totalTnChecked)}** (${totalTnCorrect}/${totalTnChecked}) | of the ground-truth entries with an expected \`task_necessary\` value, how many did \`classify()\` get right. |
+| PII leakage rate | **${pct(b.totalLeaked, b.totalGt)}** (${b.totalLeaked}/${b.totalGt}) | ground-truth PII with no matching redacted region. Every redacted region's bbox is fully mask-painted (\`mask.test.ts\`), so "not redacted" = pixels reach the server unmasked. |
+| Over-masking rate | **${pct(b.totalOverMasks, b.totalRedactedValueBearing)}** (${b.totalOverMasks}/${b.totalRedactedValueBearing}) | value-bearing redacted regions that don't correspond to any ground-truth PII on that fixture (false-positive redaction of benign content). |
+| Task-necessity accuracy | **${pct(b.totalTnCorrect, b.totalTnChecked)}** (${b.totalTnCorrect}/${b.totalTnChecked}) | of the ground-truth entries with an expected \`task_necessary\` value, how many did \`classify()\` get right. |
+| Backstop boxes over benign UI | **${b.totalBenignHeuristic}** of ${b.totalHeuristic} | value-less fail-closed boxes that cover no ground-truth item. Not part of the over-masking rate above (that only counts value-bearing regions). |
 
-## Per-fixture
+## Per-fixture (baseline)
 
-| Fixture | Ground-truth PII | Caught | Leaked | Over-masks | Task-necessity |
-|---|---|---|---|---|---|
+| Fixture | Ground-truth PII | Caught | Leaked | Over-masks | Backstop boxes | Task-necessity |
+|---|---|---|---|---|---|---|
 ${rows}
+
+"Backstop boxes" counts value-less fail-closed boxes from \`text-likelihood.ts\`; "benign" means the box covers no ground-truth item, i.e. UI the backstop blacked out for nothing. The "Over-masking rate" above ignores value-less boxes, so this column is the only place that cost shows up.
+
+## Red-team: evasion attempts against the redaction pipeline
+
+**Scope, stated plainly:** this harness has no live agent loop, so these fixtures
+do NOT test whether a VLM agent can be prompt-injected into leaking a
+placeholder's real value. They test the narrower, still-real question: can
+page content that's deliberately trying to dodge detection (low-contrast
+text, tiny fonts, homoglyphs, character-spacing, missing keyword labels,
+adjacent injection-styled distractor text) still get past the perception/
+redaction layer before anything reaches the network?
+
+**Attack success rate: ${pct(attacksSucceeded, redteamAttacksWithGt.length)}** (${attacksSucceeded}/${redteamAttacksWithGt.length} techniques got at least one ground-truth PII item past redaction)
+
+| Fixture | Technique | Caught | Result | Over-masks |
+|---|---|---|---|---|
+${redteamRows}
+
+**How the low-contrast and tiny-font cases are now handled:** both used to
+be outright OCR *detection* failures — Tesseract emitted zero words for
+that line, so there was no text for NER/regex to ever see. Two whole-image
+fixes were tried and failed: a \`user_defined_dpi\` config tweak did
+nothing, and a whole-image 3x-upscale + CLAHE-contrast pass regressed two
+previously-clean baseline detections without fixing either target case, so
+it was reverted — global preprocessing risks the *whole* image; a bug
+anywhere hits everything.
+
+The fix now in place is a three-layer fallback, each layer scoped so it
+can only ever ADD a redaction, never remove or weaken one that already
+works:
+
+1. \`text-likelihood.ts\` flags "something text-shaped is here" via local
+   pixel variance — a signal that survives near-invisible contrast and
+   sub-10px fonts because it's relative, not absolute. It then discards blobs
+   that are positively page chrome (thin lines; large hollow outlines such as
+   input borders and card frames), since variance alone also fires on those.
+2. For each flagged OCR blind spot, \`ocr-rescue.ts\` attempts a SECOND,
+   scoped OCR pass: merge same-row fragments into one line box (connected-
+   components often fragments a faint/tiny line into several small blobs a
+   few pixels apart, not one unified box — cropping each fragment alone
+   starves Tesseract of line context and it reads garbage), then locally
+   contrast-stretch (min/max over the crop only, never the whole image)
+   and bilinearly upscale, and re-run Tesseract on just that crop. Because
+   this only ever touches pixels inside the flagged box, it cannot regress
+   OCR anywhere else — the exact failure mode of the earlier whole-image
+   attempt. A single fixed upscale factor doesn't generalize (an earlier
+   version hardcoded 5x, which happened to win on these fixtures but isn't
+   derived from any general theory of OCR resolution — 6x, which
+   intuitively "should" be at least as good, was consistently WORSE and
+   misread a "2" as "Z"), so \`rescueBlindSpot\` instead tries a small
+   spread of upscale factors (\`RESCUE_CANDIDATES\`) in order and keeps the
+   FIRST one whose reading actually validates — passes the same
+   structured-PII/NER/label detectors real OCR text goes through
+   (\`extractRescuedPii\`) — rather than trusting whichever one Tesseract
+   merely produced SOME text for. A candidate that reads garbage costs one
+   wasted OCR call on an already-small, already-rare crop and is otherwise
+   harmless. On this benchmark it now recovers the EXACT value for both
+   previously-unrecoverable fixtures below.
+3. If no candidate's reading validates, the blind spot still falls back to
+   the pre-existing fail-closed heuristic: pixels blacked out, and
+   \`label-context.ts\` tries to at least narrow the *category* (never the
+   value) from a nearby legible label — now matched against a broader,
+   deliberately-curated vocabulary (common misspellings, "Mob No", "A/C
+   No", "Driving Licence", etc.), while still excluding bare "PIN"
+   (ambiguous with a postal PIN code — guessing wrong is worse than not
+   guessing). It is exercised directly by \`fuse.test.ts\` with a fixture
+   where the label is legible and the value is not — the realistic case it
+   targets — but does not fire on either fixture below even now, since
+   both fixtures hide the label with the exact same evasion styling as the
+   value.
+
+**A real limit worth stating plainly:** trying several upscale factors and
+validating the result is more robust than trusting one fixed guess, but it
+is still a small, fixed candidate list, not an exhaustive search — an
+even more extreme font size than these fixtures could still exhaust every
+candidate without validating. In that case it resists safely (fails
+closed to a blackbox with no value claimed — see the fallback above)
+rather than reporting a wrong value. This is a 2-fixture synthetic
+benchmark, not a claim that all OCR blind spots are now recoverable.
 
 ## Scope and honesty notes
 
@@ -144,11 +355,43 @@ ${rows}
   pixel-level redaction is proven separately by \`mask.test.ts\` and
   \`perception-e2e.ts\`.
 - FACE and BYSTANDER_SCREEN are excluded for the same reason (no value).
-- This is a small (${results.length}-fixture), synthetic, English-text benchmark —
-  not GUIGuard-Bench or PrivScreen (no license/access path to those during
-  this build). It measures *this system's* real behaviour, which is the
-  point: previously the pitch deck cited literature task-success numbers
-  (80.8% vs 83.6%) as if they were SentryLens's own. These are ours.
+- This is a small (${baseline.length}-fixture baseline, ${redteam.length}-fixture red-team), synthetic,
+  English-text benchmark — not GUIGuard-Bench, PrivScreen, REDACT, or
+  RedacBench (no license/access path to those during this build). It
+  measures *this system's* real behaviour, which is the point: previously
+  the pitch deck cited literature task-success numbers (80.8% vs 83.6%) as
+  if they were SentryLens's own. These are ours.
+- The red-team fixtures are hand-authored, not drawn from a published
+  attack corpus (e.g. WASP, BrowseSafe-Bench, IPI-proxy) — a meaningful
+  next step, not a substitute for this initial pass.
+- "Positional catch" attribution is now bbox-level: a ground-truth item counts
+  as caught by a fail-closed box only if at least half of that box lies inside
+  the item's on-screen band (\`bbox\` in fixtures.ts). The band is a whole text
+  line (plain fixtures) or a whole table cell (dark-ui-login-roster), not a
+  glyph-tight box, so this proves "the right line/cell was blacked out", not
+  "every pixel of the value was".
+- The over-masking rate rose from 0.0% to ${pct(b.totalOverMasks, b.totalRedactedValueBearing)} when the
+  \`dark-ui-login-roster\` fixture was added. Nothing regressed: the earlier
+  0.0% was measured only on plain text lines on white, which cannot show
+  over-masking of buttons, labels or page chrome. The remaining over-mask is
+  the NER model tagging the button text "Sign" as a person.
+- The value-bearing over-masking rate never counted value-less fail-closed
+  boxes, and those are exactly what the backstop adds. They are now counted
+  separately ("Backstop boxes"). On the live demo page the untightened backstop
+  blacked out the header edge, input outlines, card borders and the Sign-in
+  button, none of which showed up in the old over-masking rate.
+- The backstop now drops (1) thin lines and (2) large hollow outlines. Both
+  thresholds were chosen from measurements on these fixtures (text blobs had
+  interior fill 0.57-1.00, outlines 0.00-0.19; see text-likelihood.ts), which is
+  a small sample. Small ambiguous boxes (checkboxes, icon buttons) are kept, so
+  they can still be blacked out. A long single line of text is kept even at an
+  extreme aspect ratio. Not tested: an adversary shaping text to look like a
+  thin line or an outline.
+- On the real demo page rendered in Chrome, Tesseract missed several light-on-
+  dark values that this eval's dark-ui fixture reads fine (font rendering
+  differs between headless SVG and Chrome). So this eval does NOT exercise the
+  backstop's rescue of dark-theme OCR misses; that was observed once, by hand,
+  and is not yet a regression test.
 `;
 }
 

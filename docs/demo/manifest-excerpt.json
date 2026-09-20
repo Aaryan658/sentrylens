@@ -1,0 +1,47 @@
+{
+  "task": "open the telemetry report for station VSSC-03",
+  "redacted": [
+    {
+      "category": "PASSWORD",
+      "placeholder": "PASSWORD#1",
+      "value_len": null,
+      "risk": "high",
+      "task_necessary": false
+    },
+    {
+      "category": "EMAIL",
+      "placeholder": "EMAIL#qw64v",
+      "value_len": 17,
+      "risk": "medium",
+      "task_necessary": false
+    },
+    {
+      "category": "PAN",
+      "placeholder": "PAN#uyhox",
+      "value_len": 10,
+      "risk": "high",
+      "task_necessary": false
+    },
+    {
+      "category": "PHONE_NUMBER",
+      "placeholder": "PHONE_NUMBER#jvrdm",
+      "value_len": 10,
+      "risk": "medium",
+      "task_necessary": false
+    },
+    {
+      "category": "PERSON_NAME",
+      "placeholder": "PERSON_NAME#bfa4a",
+      "value_len": 8,
+      "risk": "medium",
+      "task_necessary": false
+    },
+    {
+      "category": "OTHER",
+      "placeholder": "OTHER#1",
+      "value_len": null,
+      "risk": "high",
+      "task_necessary": false
+    }
+  ]
+}

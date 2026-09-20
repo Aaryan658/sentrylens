@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 250" width="1440" height="250" font-family="Segoe UI, Calibri, Arial, sans-serif">
+  <defs>
+    <marker id="ah" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#0B1F3A"/>
+    </marker>
+  </defs>
+
+  <!-- boundary lines -->
+  <line x1="720" y1="30" x2="720" y2="230" stroke="#0B1F3A" stroke-width="3" stroke-dasharray="10 8"/>
+  <line x1="1090" y1="30" x2="1090" y2="230" stroke="#0B1F3A" stroke-width="3" stroke-dasharray="10 8"/>
+  <text x="350" y="40" text-anchor="middle" font-size="24" fill="#5A6472">your device</text>
+  <text x="905" y="40" text-anchor="middle" font-size="24" fill="#5A6472">the cloud</text>
+  <text x="1265" y="40" text-anchor="middle" font-size="24" fill="#5A6472">your device</text>
+
+  <!-- step 1 -->
+  <rect x="20" y="70" width="290" height="140" rx="14" fill="#EEF4FB" stroke="#0B1F3A" stroke-width="2.5"/>
+  <circle cx="58" cy="106" r="20" fill="#9EC5FF"/>
+  <text x="58" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#0B1F3A">1</text>
+  <text x="90" y="114" font-size="26" font-weight="700" fill="#0B1F3A">Screen captured</text>
+  <text x="44" y="164" font-size="22" fill="#5A6472">screenshot and page</text>
+  <text x="44" y="192" font-size="22" fill="#5A6472">structure, read locally</text>
+
+  <!-- step 2 -->
+  <rect x="390" y="70" width="290" height="140" rx="14" fill="#EEF4FB" stroke="#0B1F3A" stroke-width="2.5"/>
+  <circle cx="428" cy="106" r="20" fill="#FFB020"/>
+  <text x="428" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#0B1F3A">2</text>
+  <text x="460" y="114" font-size="26" font-weight="700" fill="#0B1F3A">Hidden on device</text>
+  <text x="414" y="164" font-size="22" fill="#5A6472">faces, IDs, passwords</text>
+  <text x="414" y="192" font-size="22" fill="#5A6472">become placeholders</text>
+
+  <!-- step 3 (cloud) -->
+  <rect x="760" y="70" width="290" height="140" rx="14" fill="#F0F1F4" stroke="#8A93A0" stroke-width="2.5"/>
+  <circle cx="798" cy="106" r="20" fill="#C5CBD3"/>
+  <text x="798" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#0B1F3A">3</text>
+  <text x="830" y="114" font-size="26" font-weight="700" fill="#0B1F3A">Model decides</text>
+  <text x="784" y="164" font-size="22" fill="#5A6472">sees the clean image</text>
+  <text x="784" y="192" font-size="22" fill="#5A6472">and placeholders only</text>
+
+  <!-- step 4 -->
+  <rect x="1130" y="70" width="290" height="140" rx="14" fill="#EEF4FB" stroke="#0B1F3A" stroke-width="2.5"/>
+  <circle cx="1168" cy="106" r="20" fill="#9EC5FF"/>
+  <text x="1168" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#0B1F3A">4</text>
+  <text x="1200" y="114" font-size="26" font-weight="700" fill="#0B1F3A">Real values in</text>
+  <text x="1154" y="164" font-size="22" fill="#5A6472">your browser fills them</text>
+  <text x="1154" y="192" font-size="22" fill="#5A6472">back in, then clicks</text>
+
+  <!-- arrows -->
+  <line x1="316" y1="140" x2="384" y2="140" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <line x1="686" y1="140" x2="754" y2="140" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <line x1="1056" y1="140" x2="1124" y2="140" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+</svg>

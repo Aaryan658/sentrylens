@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 880" width="1400" height="880" font-family="Segoe UI, Calibri, Arial, sans-serif">
+  <defs>
+    <marker id="ah" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#0B1F3A"/>
+    </marker>
+  </defs>
+
+  <!-- device panel -->
+  <rect x="20" y="20" width="680" height="780" rx="16" fill="#F3F7FC" stroke="#0B1F3A" stroke-width="2.5"/>
+  <text x="44" y="60" font-size="26" font-weight="700" fill="#0B1F3A">YOUR DEVICE (trusted)</text>
+
+  <!-- step 1 -->
+  <text x="44" y="104" font-size="25" font-weight="700" fill="#0B1F3A">1  See the screen</text>
+  <g font-size="21" fill="#0B1F3A" text-anchor="middle">
+    <rect x="44" y="118" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="199" y="151">Page (DOM walk)</text>
+    <rect x="374" y="118" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="529" y="151">Regions (YOLOS)</text>
+    <rect x="44" y="182" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="199" y="215">Text (Tesseract)</text>
+    <rect x="374" y="182" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="529" y="215">PII finder (GLiNER)</text>
+    <rect x="44" y="246" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="199" y="279">Faces (MediaPipe)</text>
+    <rect x="374" y="246" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#9EC5FF" stroke-width="2.5"/>
+    <text x="529" y="279">Summary (SmolVLM)</text>
+  </g>
+  <line x1="364" y1="304" x2="364" y2="350" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+
+  <!-- step 2 -->
+  <text x="44" y="388" font-size="25" font-weight="700" fill="#0B1F3A">2  Hide what is sensitive</text>
+  <g font-size="21" fill="#0B1F3A" text-anchor="middle">
+    <rect x="44" y="402" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="199" y="435">Fuse signals</text>
+    <rect x="374" y="402" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="529" y="435">Score risk</text>
+    <rect x="44" y="466" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="199" y="499">Validate IDs (Luhn, Verhoeff)</text>
+    <rect x="374" y="466" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="529" y="499">Paint masks</text>
+    <rect x="44" y="530" width="640" height="52" rx="10" fill="#9EC5FF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="364" y="563" font-weight="700">Clean image + manifest</text>
+  </g>
+
+  <!-- step 3 -->
+  <text x="44" y="636" font-size="25" font-weight="700" fill="#0B1F3A">3  Put real values back</text>
+  <g font-size="21" fill="#0B1F3A" text-anchor="middle">
+    <rect x="44" y="650" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="199" y="683">Swap placeholders back</text>
+    <rect x="374" y="650" width="310" height="52" rx="10" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+    <text x="529" y="683">Click, type, scroll</text>
+  </g>
+  <text x="44" y="758" font-size="22" fill="#5A6472">Then repeat from step 1 until the task is done.</text>
+
+  <!-- trust boundary -->
+  <line x1="720" y1="20" x2="720" y2="800" stroke="#0B1F3A" stroke-width="3" stroke-dasharray="10 8"/>
+  <circle cx="720" cy="340" r="32" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="3"/>
+  <path d="M712 338 v-8 a8 8 0 0 1 16 0 v8" fill="none" stroke="#0B1F3A" stroke-width="4"/>
+  <rect x="706" y="338" width="28" height="22" rx="4" fill="#0B1F3A"/>
+
+  <!-- cloud panel -->
+  <rect x="740" y="20" width="640" height="780" rx="16" fill="#F0F1F4" stroke="#8A93A0" stroke-width="2.5"/>
+  <text x="764" y="60" font-size="26" font-weight="700" fill="#5A6472">THE CLOUD (untrusted)</text>
+  <text x="764" y="96" font-size="22" fill="#5A6472">Only the clean image and the manifest cross the line.</text>
+
+  <g text-anchor="middle" fill="#0B1F3A">
+    <rect x="780" y="150" width="560" height="76" rx="10" fill="#FFFFFF" stroke="#8A93A0" stroke-width="2"/>
+    <text x="1060" y="184" font-size="23" font-weight="700">Thin proxy (Node / Express)</text>
+    <text x="1060" y="211" font-size="20" fill="#5A6472">keeps no state</text>
+    <rect x="780" y="270" width="560" height="76" rx="10" fill="#FFFFFF" stroke="#8A93A0" stroke-width="2"/>
+    <text x="1060" y="304" font-size="23" font-weight="700">Open-weight VLM (Qwen2.5-VL)</text>
+    <text x="1060" y="331" font-size="20" fill="#5A6472">any OpenAI-compatible model</text>
+    <rect x="780" y="390" width="560" height="76" rx="10" fill="#FFFFFF" stroke="#8A93A0" stroke-width="2"/>
+    <text x="1060" y="424" font-size="23" font-weight="700">One action per step</text>
+    <text x="1060" y="451" font-size="20" fill="#5A6472">click, type or scroll, using placeholders</text>
+  </g>
+  <line x1="1060" y1="226" x2="1060" y2="266" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <line x1="1060" y1="346" x2="1060" y2="386" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+
+  <!-- flow across the boundary: manifest goes out, action comes back -->
+  <path d="M684 556 H762 V188 H778" fill="none" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <path d="M1060 466 V676 H694" fill="none" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+
+  <!-- footer -->
+  <rect x="20" y="820" width="1360" height="44" rx="10" fill="#0B1F3A"/>
+  <text x="700" y="850" text-anchor="middle" font-size="21" fill="#FFFFFF">WXT / MV3, TypeScript, React, Transformers.js, ONNX Runtime Web (WebGPU with WASM fallback)</text>
+</svg>

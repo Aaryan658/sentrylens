@@ -46,6 +46,6 @@ this week, sequence by risk/value.
 - [x] 2. Eval harness — done (`extension/eval/`, `docs/EVAL_RESULTS.md`). First run found a real gap: 33.3% leakage (3/9), all misses the shape "Initial. Surname" in prose (not a DOM table) — NER doesn't reliably tag it outside the table-row fallback. **Fixed** (2026-09-14): root cause was the NER model's recall genuinely collapsing on this shape (confirmed via live probe), not a merge-logic bug — added `redaction/names.ts`, an OCR-text label+name heuristic mirroring the DOM table-row fallback. Also caught and fixed an OCR I/l homoglyph issue and a wrong fixture assumption along the way. Current numbers: 0.0% leakage, 0.0% over-masking, 100% task-necessity accuracy (all 5 fixtures).
 - [ ] 3. Review overlay
 - [ ] 4. Policy layer
-- [ ] 5. Deployment + connectivity hardening
+- [ ] 5. Deployment + connectivity hardening. Checked 2026-09-20: the "server-down -> on-device answer" tier does NOT exist (`agent/loop.ts` fails the task; there is no on-device agent model). Fixed 2026-09-20: a `degraded` perception result (failed or uncached models) used to send DOM-only redaction; `runAgent` now stops the run before anything is sent.
 
 Update this checklist as each subsystem plan is written and completed.

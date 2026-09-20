@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" font-family="Segoe UI, Calibri, Arial, sans-serif">
+  <defs>
+    <marker id="ah" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#0B1F3A"/>
+    </marker>
+  </defs>
+
+  <!-- rung 1 -->
+  <rect x="20" y="20" width="1160" height="116" rx="14" fill="#EEF4FB" stroke="#C9D6EA" stroke-width="2"/>
+  <circle cx="76" cy="78" r="30" fill="#9EC5FF"/>
+  <text x="76" y="89" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">1</text>
+  <text x="130" y="70" font-size="29" font-weight="700" fill="#0B1F3A">Normal</text>
+  <text x="130" y="106" font-size="24" fill="#5A6472">WebGPU is available</text>
+  <line x1="500" y1="78" x2="556" y2="78" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <text x="590" y="88" font-size="26" fill="#0B1F3A">Full perception on the GPU</text>
+
+  <!-- rung 2 -->
+  <rect x="20" y="156" width="1160" height="116" rx="14" fill="#EEF4FB" stroke="#C9D6EA" stroke-width="2"/>
+  <circle cx="76" cy="214" r="30" fill="#9EC5FF"/>
+  <text x="76" y="225" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">2</text>
+  <text x="130" y="206" font-size="29" font-weight="700" fill="#0B1F3A">No WebGPU</text>
+  <text x="130" y="242" font-size="24" fill="#5A6472">older or locked-down laptop</text>
+  <line x1="500" y1="214" x2="556" y2="214" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <text x="590" y="224" font-size="26" fill="#0B1F3A">Same pipeline on the CPU, a bit slower</text>
+
+  <!-- rung 3 -->
+  <rect x="20" y="292" width="1160" height="116" rx="14" fill="#FFF6E3" stroke="#F1D9A6" stroke-width="2"/>
+  <circle cx="76" cy="350" r="30" fill="#FFD98A"/>
+  <text x="76" y="361" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">3</text>
+  <text x="130" y="342" font-size="29" font-weight="700" fill="#0B1F3A">Server unreachable</text>
+  <text x="130" y="378" font-size="24" fill="#5A6472">connection drops</text>
+  <line x1="500" y1="350" x2="556" y2="350" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <text x="590" y="360" font-size="26" fill="#0B1F3A">The task stops. Nothing leaves the device.</text>
+
+  <!-- rung 4 -->
+  <rect x="20" y="428" width="1160" height="116" rx="14" fill="#FFF0D0" stroke="#F1D9A6" stroke-width="2"/>
+  <circle cx="76" cy="486" r="30" fill="#FFB020"/>
+  <text x="76" y="497" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">4</text>
+  <text x="130" y="478" font-size="29" font-weight="700" fill="#0B1F3A">Models not cached yet</text>
+  <text x="130" y="514" font-size="24" fill="#5A6472">not downloaded yet</text>
+  <line x1="500" y1="486" x2="556" y2="486" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <text x="590" y="496" font-size="26" fill="#0B1F3A">The task waits. Nothing is sent.</text>
+
+  <!-- caption -->
+  <text x="600" y="612" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">Privacy never drops. Only features do.</text>
+</svg>

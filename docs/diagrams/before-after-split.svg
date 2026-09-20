@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" font-family="Segoe UI, Calibri, Arial, sans-serif">
+  <defs>
+    <marker id="ah" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#0B1F3A"/>
+    </marker>
+  </defs>
+
+  <!-- headers -->
+  <text x="290" y="46" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">What you see</text>
+  <text x="910" y="46" text-anchor="middle" font-size="30" font-weight="700" fill="#0B1F3A">What the cloud gets</text>
+
+  <!-- LEFT: real screen -->
+  <rect x="30" y="70" width="520" height="450" rx="16" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2"/>
+  <rect x="30" y="70" width="520" height="46" rx="16" fill="#0B1F3A"/>
+  <rect x="30" y="96" width="520" height="20" fill="#0B1F3A"/>
+  <circle cx="56" cy="93" r="6" fill="#9EC5FF"/>
+  <circle cx="78" cy="93" r="6" fill="#9EC5FF"/>
+  <circle cx="100" cy="93" r="6" fill="#9EC5FF"/>
+  <text x="126" y="100" font-size="21" fill="#FFFFFF">Duty roster: station VSSC-03</text>
+
+  <g font-size="25">
+    <text x="60" y="176" fill="#5A6472">Operator</text>
+    <text x="200" y="176" fill="#0B1F3A" font-weight="600">R. Iyer</text>
+    <text x="60" y="244" fill="#5A6472">Phone</text>
+    <text x="200" y="244" fill="#0B1F3A" font-weight="600">9123456780</text>
+    <text x="60" y="312" fill="#5A6472">Email</text>
+    <text x="200" y="312" fill="#0B1F3A" font-weight="600">r.iyer@vssc.test</text>
+    <text x="60" y="380" fill="#5A6472">PAN</text>
+    <text x="200" y="380" fill="#0B1F3A" font-weight="600">BNZAA2318K</text>
+    <text x="60" y="466" fill="#5A6472">Photo</text>
+  </g>
+  <!-- simple avatar -->
+  <circle cx="230" cy="455" r="34" fill="#DCE7F6" stroke="#0B1F3A" stroke-width="2"/>
+  <circle cx="230" cy="444" r="12" fill="#0B1F3A"/>
+  <path d="M206 480 Q230 456 254 480" fill="#0B1F3A"/>
+
+  <!-- trust boundary -->
+  <line x1="600" y1="70" x2="600" y2="520" stroke="#0B1F3A" stroke-width="3" stroke-dasharray="10 8"/>
+  <circle cx="600" cy="295" r="38" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="3"/>
+  <path d="M590 293 v-9 a10 10 0 0 1 20 0 v9" fill="none" stroke="#0B1F3A" stroke-width="4"/>
+  <rect x="583" y="293" width="34" height="26" rx="4" fill="#0B1F3A"/>
+  <text x="578" y="170" text-anchor="middle" font-size="22" fill="#5A6472" transform="rotate(-90 578 170)">trust boundary</text>
+
+  <!-- RIGHT: what the cloud gets -->
+  <rect x="650" y="70" width="520" height="450" rx="16" fill="#FFFFFF" stroke="#8A93A0" stroke-width="2"/>
+  <rect x="650" y="70" width="520" height="46" rx="16" fill="#8A93A0"/>
+  <rect x="650" y="96" width="520" height="20" fill="#8A93A0"/>
+  <circle cx="676" cy="93" r="6" fill="#E6E9EE"/>
+  <circle cx="698" cy="93" r="6" fill="#E6E9EE"/>
+  <circle cx="720" cy="93" r="6" fill="#E6E9EE"/>
+  <text x="746" y="100" font-size="21" fill="#FFFFFF">Duty roster: station VSSC-03</text>
+
+  <g font-size="25" fill="#5A6472">
+    <text x="680" y="176">Operator</text>
+    <text x="680" y="244">Phone</text>
+    <text x="680" y="312">Email</text>
+    <text x="680" y="380">PAN</text>
+    <text x="680" y="466">Photo</text>
+  </g>
+  <g font-size="23" font-weight="700" fill="#0B1F3A" text-anchor="middle">
+    <rect x="820" y="144" width="320" height="44" rx="8" fill="#FFB020"/>
+    <text x="980" y="176">NAME#e5d1</text>
+    <rect x="820" y="212" width="320" height="44" rx="8" fill="#FFB020"/>
+    <text x="980" y="244">PHONE#a1b2</text>
+    <rect x="820" y="280" width="320" height="44" rx="8" fill="#FFB020"/>
+    <text x="980" y="312">EMAIL#9c04</text>
+    <rect x="820" y="348" width="320" height="44" rx="8" fill="#FFB020"/>
+    <text x="980" y="380">PAN#c3d4</text>
+    <rect x="820" y="420" width="320" height="70" rx="8" fill="#FFB020"/>
+    <text x="980" y="462">FACE#1</text>
+  </g>
+
+  <!-- caption -->
+  <line x1="290" y1="558" x2="905" y2="558" stroke="#0B1F3A" stroke-width="3" marker-end="url(#ah)"/>
+  <text x="600" y="606" text-anchor="middle" font-size="24" fill="#0B1F3A">Sensitive parts are hidden on your device before anything is sent.</text>
+</svg>

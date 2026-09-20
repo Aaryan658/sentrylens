@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" font-family="Segoe UI, Calibri, Arial, sans-serif">
+  <text x="300" y="170" text-anchor="middle" font-size="150" font-weight="700" fill="#0B1F3A">0 of 15</text>
+  <text x="300" y="224" text-anchor="middle" font-size="32" fill="#0B1F3A">sensitive items leaked</text>
+  <text x="300" y="262" text-anchor="middle" font-size="24" fill="#5A6472">across 6 test screens</text>
+
+  <line x1="600" y1="60" x2="600" y2="270" stroke="#C9D6EA" stroke-width="3"/>
+
+  <text x="900" y="170" text-anchor="middle" font-size="150" font-weight="700" fill="#0B1F3A">0 of 6</text>
+  <text x="900" y="224" text-anchor="middle" font-size="32" fill="#0B1F3A">evasion tricks got through</text>
+  <text x="900" y="262" text-anchor="middle" font-size="24" fill="#5A6472">we attacked our own system</text>
+
+  <text x="600" y="322" text-anchor="middle" font-size="22" fill="#5A6472">Small, hand-built, English-language tests. Public benchmarks are next.</text>
+</svg>

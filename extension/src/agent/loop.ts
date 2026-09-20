@@ -29,6 +29,17 @@ export async function runAgent(task: string, deps: AgentDeps, opts: { maxSteps: 
       return { status: "fail", history };
     }
 
+    // Degraded means an on-device model failed or is not cached yet, so only
+    // page-marked (DOM) redaction ran and PII visible only in pixels was NOT
+    // hidden. Fail closed: send nothing rather than a weaker mask.
+    if (perceive.degraded) {
+      const reason = "on-device perception is degraded (models failed or are still loading); nothing was sent. Retry once the models have loaded";
+      const a = failAction(reason);
+      history.push({ action: a, observation: "perception degraded" });
+      deps.emit({ step, action: a, observation: reason, perceive });
+      return { status: "fail", history };
+    }
+
     let rawAction: AgentAction | undefined;
     try {
       rawAction = (await deps.askServer(task, perceive, history)).action;

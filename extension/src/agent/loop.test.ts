@@ -37,6 +37,18 @@ describe("runAgent", () => {
     expect(res.history.at(-1)!.action.type).toBe("fail");
   });
 
+  it("refuses to send anything to the server when on-device perception is degraded (fail closed)", async () => {
+    const d = deps([{ type: "done", answer: "should never be asked", thought: "" }]);
+    d.perceive = vi.fn(async () => ({ ...perceiveResult, degraded: true }));
+    const res = await runAgent("task", d, { maxSteps: 5 });
+    expect(res.status).toBe("fail");
+    expect(d.askServer).not.toHaveBeenCalled();
+    expect(d.execute).not.toHaveBeenCalled();
+    expect(res.history.at(-1)!.observation).toMatch(/degraded/i);
+    // the user must see why it stopped
+    expect(d.emit).toHaveBeenCalledTimes(1);
+  });
+
   it("fails after two consecutive 'not found' observations", async () => {
     const d = deps([{ type: "click", target_id: 999, thought: "" }]);
     d.execute = vi.fn(async () => ({ ok: false, observation: "element 999 not found" }));

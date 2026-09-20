@@ -6,6 +6,10 @@ import { runFaces } from "../../src/perception/faces";
 import { runDetector, initDetector } from "../../src/perception/detector";
 import { initVlm, screenSummary } from "../../src/perception/vlm";
 import { assemblePerception } from "../../src/perception/pipeline";
+import { textLikelihoodRegions } from "../../src/perception/text-likelihood";
+import { rescueBlindSpot } from "../../src/perception/ocr-rescue";
+import type { RawImage } from "../../src/perception/text-likelihood";
+import { mergeRowBoxes, iou } from "../../src/redaction/geometry";
 import { maskImage } from "../../src/redaction/mask";
 import { MappingTable } from "../../src/redaction/mapping";
 import type { AgentAction, PiiCategory } from "@sentrylens/shared";
@@ -32,6 +36,8 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       let nerSpans: { category: PiiCategory; value: string; start: number; end: number }[] = [];
       let faces: [number, number, number, number][] = [];
       let detections: { label: string; bbox: [number, number, number, number]; score: number }[] = [];
+      let textLikelihoodBoxes: [number, number, number, number][] = [];
+      let rescuedRegions: { bbox: [number, number, number, number]; category: PiiCategory; value: string }[] = [];
       let screenSummaryText = "";
 
       // Each model is independent — one failing (or *hanging*: a wasm worker that
@@ -62,6 +68,63 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       // it degrade the privacy result; its output only adds BYSTANDER_SCREEN
       // regions and a fallback FACE box (see fuse.ts), it never removes one.
       await tryStep("detector", async () => { await initDetector(device); detections = await runDetector(png); }, { optional: true });
+      // Fail-closed backstop for OCR blind spots (near-invisible contrast,
+      // sub-10px text): flags "text-like structure here" via local pixel
+      // variance, independent of whether OCR can read it. Never removes a
+      // detection, only adds positional (no-value) ones where OCR found
+      // nothing at all — see text-likelihood.ts and fuse.ts.
+      await tryStep("text-likelihood", async () => {
+        const bmp = await createImageBitmap(await (await fetch(png)).blob());
+        const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("2d context unavailable");
+        ctx.drawImage(bmp, 0, 0);
+        const imgData = ctx.getImageData(0, 0, bmp.width, bmp.height);
+        textLikelihoodBoxes = textLikelihoodRegions({ data: imgData.data, width: imgData.width, height: imgData.height, channels: 4 });
+      }, { optional: true });
+
+      // Scoped second-pass OCR rescue (see ocr-rescue.ts) for the blind
+      // spots text-likelihood just flagged: crop+contrast-stretch+upscale
+      // ONLY that region and retry OCR there, never touching the rest of
+      // the image, so a bad rescue can only fail to help — it cannot
+      // regress a detection anywhere else. A rescued reading is only used
+      // when it passes the same structured-PII/NER/label detectors real
+      // OCR text goes through; a garbled misread is discarded, not
+      // reported as a value (see extractRescuedPii).
+      await tryStep("ocr-rescue", async () => {
+        const blindSpots = textLikelihoodBoxes.filter((box) => !ocr.words.some((w) => iou(w.bbox, box) > 0));
+        const rescueBoxes = mergeRowBoxes(blindSpots);
+        if (rescueBoxes.length === 0) return;
+        const bmp = await createImageBitmap(await (await fetch(png)).blob());
+        const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("2d context unavailable");
+        ctx.drawImage(bmp, 0, 0);
+        const imgData = ctx.getImageData(0, 0, bmp.width, bmp.height);
+        const rawImg: RawImage = { data: imgData.data, width: imgData.width, height: imgData.height, channels: 4 };
+
+        const rescueIo = {
+          encode: async (crop: RawImage) => {
+            const cropCanvas = document.createElement("canvas");
+            cropCanvas.width = crop.width;
+            cropCanvas.height = crop.height;
+            const cctx = cropCanvas.getContext("2d")!;
+            // RawImage.data is typed as Uint8ClampedArray | Buffer because
+            // ocr-rescue.ts is shared with the Node eval harness (which
+            // feeds it a Buffer via sharp); prepareRescueCrop always
+            // constructs a real Uint8ClampedArray internally, so this cast
+            // is safe here.
+            cctx.putImageData(new ImageData(crop.data as Uint8ClampedArray, crop.width, crop.height), 0, 0);
+            return cropCanvas.toDataURL("image/png");
+          },
+          ocr: runOcr,
+          ner: runNer,
+        };
+        for (const box of rescueBoxes) {
+          const hit = await rescueBlindSpot(rawImg, box, rescueIo);
+          if (hit) rescuedRegions.push(hit);
+        }
+      }, { optional: true, ms: 20000 });
 
       // SmolVLM screen summary is WebGPU-only and optional — skipped silently
       // (with a degraded notice already covering the rest) if it cannot load or
@@ -91,6 +154,8 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
         degraded,
         mapping: session,
         detectorBoxes: detections,
+        textLikelihoodBoxes,
+        rescuedRegions,
       });
 
       const redacted = manifest.regions.filter((r) => r.kind === "redacted");

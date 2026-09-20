@@ -46,7 +46,7 @@ export const RedactedRegionSchema = z.object({
   risk: z.enum(["high", "medium", "low"]),
   style: z.enum(["blackbox", "pixelate", "blur"]),
   task_necessary: z.boolean(),
-  detected_by: z.array(z.enum(["dom", "ocr+ner", "regex", "face", "detector"])),
+  detected_by: z.array(z.enum(["dom", "ocr+ner", "regex", "face", "detector", "heuristic"])),
 });
 export type RedactedRegion = z.infer<typeof RedactedRegionSchema>;
 

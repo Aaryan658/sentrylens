@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { luhnValid, verhoeffValid, findStructuredPii } from "./validators.js";
+import { luhnValid, verhoeffValid, findStructuredPii, findStructuredPiiDespaced } from "./validators.js";
 
 describe("luhnValid", () => {
   it("accepts a known-good test card", () => expect(luhnValid("4111111111111111")).toBe(true));
@@ -39,5 +39,24 @@ describe("findStructuredPii", () => {
     const [hit] = findStructuredPii("x a@b.co");
     expect(hit!.start).toBe(2);
     expect(hit!.end).toBe(8);
+  });
+});
+
+describe("findStructuredPiiDespaced", () => {
+  it("finds a phone number spaced into single-digit tokens", () => {
+    const hits = findStructuredPiiDespaced("phone 9 1 2 3 4 5 6 7 8 0 on file");
+    expect(hits).toContainEqual(expect.objectContaining({ category: "PHONE_NUMBER", value: "9123456780" }));
+  });
+  it("returns offsets into the ORIGINAL (spaced) text, not the collapsed one", () => {
+    const text = "phone 9 1 2 3 4 5 6 7 8 0 on file";
+    const [hit] = findStructuredPiiDespaced(text);
+    expect(text.slice(hit!.start, hit!.end)).toBe("9 1 2 3 4 5 6 7 8 0");
+  });
+  it("returns nothing when there is no spaced-digit run", () => {
+    expect(findStructuredPiiDespaced("card 4111 1111 1111 1111")).toEqual([]);
+  });
+  it("does not fabricate a hit from an unrelated single space between two digits", () => {
+    // "id 5 6" is just two digits, not the 3+ run the collapse targets.
+    expect(findStructuredPiiDespaced("id 5 6 filed")).toEqual([]);
   });
 });

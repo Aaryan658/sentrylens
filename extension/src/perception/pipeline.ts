@@ -1,4 +1,4 @@
-import type { Region, RedactionManifest, PiiCategory } from "@sentrylens/shared";
+import type { BBox, Region, RedactionManifest, PiiCategory } from "@sentrylens/shared";
 import { fuseRegions } from "../redaction/fuse.js";
 import { classify, type ClassifiedRegion } from "../redaction/classify.js";
 import { buildManifest, type ElementInput } from "../redaction/manifest.js";
@@ -19,6 +19,8 @@ export interface AssembleArgs {
   degraded: boolean;
   mapping?: MappingTable;
   detectorBoxes?: DetectorBox[];
+  textLikelihoodBoxes?: BBox[];
+  rescuedRegions?: { bbox: BBox; category: PiiCategory; value: string }[];
 }
 
 export interface AssembleResult {
@@ -48,6 +50,8 @@ export function assemblePerception(args: AssembleArgs): AssembleResult {
     ocrOffsets: args.ocrOffsets,
     pageSensitive: args.domSensitive.some((d) => d.category === "PASSWORD"),
     detectorBoxes: args.detectorBoxes,
+    textLikelihoodBoxes: args.textLikelihoodBoxes,
+    rescuedRegions: args.rescuedRegions,
   });
 
   const classified = fused.map((r) => classify(r, args.task, domRegionsImg));

@@ -54,7 +54,13 @@ const RULES: Rule[] = [
   { category: "IP_ADDRESS", re: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g },
   { category: "CREDIT_CARD", re: /\b(?:\d[ -]?){13,19}\b/g, check: luhnValid },
   { category: "AADHAAR", re: /\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/g, check: verhoeffValid },
-  { category: "PHONE_NUMBER", re: /(?:\+91[- ]?)?\b[6-9]\d{9}\b|\+\d{1,3}[- ]?\d{6,12}/g },
+  // Leading boundary is (?<!\d) rather than \b: a phone number glued
+  // directly to a label with no visible gap ("Phone9123456780" — this is
+  // how OCR word-merging can render it, not just deliberate evasion) has
+  // a letter immediately before the digits, and \b does not count a
+  // letter->digit transition as a boundary (both are \w). (?<!\d) still
+  // rejects matching inside a longer digit run, just not letter-adjacency.
+  { category: "PHONE_NUMBER", re: /(?:\+91[- ]?)?(?<!\d)[6-9]\d{9}\b|\+\d{1,3}[- ]?\d{6,12}/g },
   { category: "API_KEY", re: /\b(?:sk|pk|ghp|xox[bp])[-_][A-Za-z0-9]{16,}\b/g },
 ];
 
@@ -70,4 +76,39 @@ export function findStructuredPii(text: string): StructuredHit[] {
     }
   }
   return hits;
+}
+
+/**
+ * Detects character-spaced digit sequences ("9 1 2 3 4 5 6 7 8 0") — a
+ * known evasion trick (same idea as old-web "j o h n @ example . com"
+ * obfuscation) that defeats the contiguous-digit regexes above once OCR
+ * emits each digit as its own word. Collapses single-space-separated digit
+ * runs before matching, then translates any hit's offsets back to the
+ * *original* text so callers can still map them to OCR word bounding boxes
+ * (which are indexed against the original, un-collapsed string).
+ */
+export function findStructuredPiiDespaced(text: string): StructuredHit[] {
+  const digitRun = /\d(?: \d){2,}/g;
+  let collapsed = "";
+  const toOriginal: number[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let changed = false;
+  while ((m = digitRun.exec(text)) !== null) {
+    changed = true;
+    for (let i = last; i < m.index; i++) { collapsed += text[i]; toOriginal.push(i); }
+    for (let i = 0; i < m[0].length; i++) {
+      const ch = m[0][i]!;
+      if (ch !== " ") { collapsed += ch; toOriginal.push(m.index + i); }
+    }
+    last = m.index + m[0].length;
+  }
+  if (!changed) return [];
+  for (let i = last; i < text.length; i++) { collapsed += text[i]; toOriginal.push(i); }
+
+  return findStructuredPii(collapsed).map((hit) => ({
+    ...hit,
+    start: toOriginal[hit.start]!,
+    end: toOriginal[hit.end - 1]! + 1,
+  }));
 }

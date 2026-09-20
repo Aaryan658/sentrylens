@@ -40,6 +40,20 @@ describe("fuseRegions", () => {
     expect(out[0]!.detected_by.sort()).toEqual(["ocr+ner", "regex"]);
   });
 
+  it("drops a fail-closed blind-spot box that lies entirely inside another redacted region (adds no coverage)", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      domSensitive: [{ bbox: [10, 10, 300, 40], category: "PASSWORD", value: null, confidence: 1, detected_by: ["dom"] }],
+      textLikelihoodBoxes: [
+        [60, 22, 200, 14], // the dots inside the password field, already fully masked
+        [400, 22, 80, 14], // somewhere else: must still be redacted
+      ],
+    };
+    const out = fuseRegions(inp);
+    expect(out.map((r) => r.category).sort()).toEqual(["OTHER", "PASSWORD"]);
+    expect(out.find((r) => r.category === "OTHER")!.bbox).toEqual([400, 22, 80, 14]);
+  });
+
   it("promotes a face to high confidence when the page is sensitive", () => {
     const out = fuseRegions({ ...empty, faces: [[0, 0, 10, 10]], pageSensitive: true });
     expect(out[0]!.confidence).toBeGreaterThanOrEqual(0.9);
@@ -89,6 +103,52 @@ describe("fuseRegions", () => {
 
   it("ignores a person box when no faces and no detector boxes are given (default empty array)", () => {
     expect(fuseRegions(empty).filter((r) => r.category === "FACE")).toHaveLength(0);
+  });
+
+  it("infers a category for a heuristic OCR blind spot from a nearby legible label", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      ocrWords: [{ text: "Aadhaar:", bbox: [10, 40, 70, 20] }],
+      textLikelihoodBoxes: [[100, 40, 150, 20]], // no OCR word overlaps this box
+    };
+    const out = fuseRegions(inp);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ category: "AADHAAR", value: null, detected_by: ["heuristic"] });
+  });
+
+  it("falls back to OTHER for a heuristic blind spot with no nearby label", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      textLikelihoodBoxes: [[100, 40, 150, 20]],
+    };
+    const out = fuseRegions(inp);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ category: "OTHER", value: null, detected_by: ["heuristic"] });
+  });
+
+  it("merges a rescued value into a heuristic blind spot without dropping the fail-closed tag", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      textLikelihoodBoxes: [[100, 40, 150, 20]],
+      rescuedRegions: [{ bbox: [100, 40, 150, 20], category: "AADHAAR", value: "2341 2341 2346" }],
+    };
+    const out = fuseRegions(inp);
+    expect(out).toHaveLength(1);
+    // Real category+value now available for the agent's task-necessity reasoning,
+    // but "heuristic" must survive the merge — classify.ts keys its forced
+    // high-risk/blackbox override off exactly that tag, not the category.
+    expect(out[0]).toMatchObject({ category: "AADHAAR", value: "2341 2341 2346" });
+    expect(out[0]!.detected_by).toContain("heuristic");
+  });
+
+  it("ignores a rescued region that doesn't correspond to any heuristic blind spot", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      rescuedRegions: [{ bbox: [100, 40, 150, 20], category: "AADHAAR", value: "2341 2341 2346" }],
+    };
+    const out = fuseRegions(inp);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.detected_by).not.toContain("heuristic");
   });
 });
 

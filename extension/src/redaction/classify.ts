@@ -23,7 +23,11 @@ function overlapsLoosely(a: BBox, b: BBox): boolean {
 }
 
 export function classify(region: SensitiveRegion, task: string, regions: Region[]): ClassifiedRegion {
-  const risk = defaultRisk(region.category);
+  // A "heuristic" detection means OCR found nothing readable there but the
+  // pixels still look text-structured (see text-likelihood.ts) — we don't
+  // know WHAT it is, which is exactly why it must fail closed (high risk,
+  // full blackbox) rather than default to OTHER's normally-low risk.
+  const risk = region.detected_by.includes("heuristic") ? "high" : defaultRisk(region.category);
   const style = defaultStyle(risk);
 
   const taskTokens = new Set(tokens(task));

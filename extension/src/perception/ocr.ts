@@ -22,6 +22,13 @@ function tesseractOptions(): Record<string, unknown> {
 export async function initOcr(): Promise<void> {
   if (worker) return;
   worker = await createWorker("eng", 1, tesseractOptions());
+  // Screenshots have no real DPI metadata, so Tesseract estimates one from
+  // stroke width — an estimate that skews low for small UI text (e.g. an
+  // 8px field label) and can drop it below Tesseract's reliable-detection
+  // threshold. A higher user_defined_dpi hint tells Tesseract to treat the
+  // image as higher-resolution than its own estimate, improving recall on
+  // small text at negligible cost on normal-size text.
+  await worker.setParameters({ user_defined_dpi: "300" });
 }
 
 export async function disposeOcr(): Promise<void> {
@@ -30,15 +37,19 @@ export async function disposeOcr(): Promise<void> {
   worker = null;
 }
 
+// Below this Tesseract word-confidence (0-100), a "hit" is more likely
+// noise than real text than something worth feeding to NER/regex.
+const MIN_WORD_CONFIDENCE = 35;
+
 export async function runOcr(pngDataUrl: string): Promise<{ words: OcrWord[]; joined: string; offsets: number[] }> {
   if (!worker) await initOcr();
   const { data } = await worker!.recognize(pngDataUrl);
   const words: OcrWord[] = [];
   const offsets: number[] = [];
   let joined = "";
-  for (const w of (data.words ?? []) as Array<{ text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }>) {
+  for (const w of (data.words ?? []) as Array<{ text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } }>) {
     const text = w.text.trim();
-    if (!text) continue;
+    if (!text || w.confidence < MIN_WORD_CONFIDENCE) continue;
     if (joined.length) joined += " ";
     offsets.push(joined.length);
     joined += text;

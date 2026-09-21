@@ -31,7 +31,7 @@ No change.
 
 ## Slide 5: impact
 - Visuals: `big-numbers.svg` (0 of 15 leaked, 0 of 6 attacks) and `attack-tiles.svg`. Drop the three-series bar chart (or keep one small chart only if the grey literature bars get a citation). If a chart stays: title it "Measured on our own tests: 6 screens, 15 sensitive items" (not "9 Fixtures") and fix the legend overprinting the axis.
-- Security: 0 of 15 sensitive items leaked in our tests (6 test screens, one of them a realistic dark-theme login and roster page); on that page 1 benign button word was over-masked and the fail-closed backstop blacked out 1 label OCR missed. Say so if asked about over-masking.
+- Security: 0 of 15 sensitive items leaked in our tests (6 test screens, one of them a realistic dark-theme login and roster page); on that page nothing benign was masked as a false value, but the fail-closed backstop blacks out text OCR cannot read, such as the caption on a white-on-blue button. Say so if asked about over-masking. Also true and worth one line: we ran the real demo page in real Chrome at four display scales (100%, 125%, 150%, 200%) and counted glyph pixels still visible under the masks: none.
 - Security (continued): six evasion tricks (faint text, tiny text, spaced digits, lookalike letters, no labels, fake instructions) got through 0 of 6 times. Faces and passwords stay on device; exported images carry no EXIF.
 - Usefulness: task-necessity check passed 1 of 1 (small sample, say so).
 - What is different: most redaction tools only hide what they can read; Google Cloud DLP, for one, returns the image unchanged when it detects nothing. (Keep the "we black it out anyway" sentence only if the backstop stays enabled.)

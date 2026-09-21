@@ -20,17 +20,14 @@
  * Run:  pnpm --filter @sentrylens/extension eval
  * First run downloads model weights (same as the e2e harness).
  */
-import type { PiiCategory, BBox } from "@sentrylens/shared";
+import type { BBox } from "@sentrylens/shared";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import sharp from "sharp";
-import { runOcr, disposeOcr } from "../src/perception/ocr.js";
-import { runNer, initNer, disposeNer } from "../src/perception/ner.js";
-import { assemblePerception } from "../src/perception/pipeline.js";
-import { textLikelihoodRegions, type RawImage } from "../src/perception/text-likelihood.js";
-import { rescueBlindSpot } from "../src/perception/ocr-rescue.js";
-import { iou, mergeRowBoxes } from "../src/redaction/geometry.js";
+import { disposeOcr } from "../src/perception/ocr.js";
+import { initNer, disposeNer } from "../src/perception/ner.js";
+import { runPerception } from "./harness.js";
 import { FIXTURES, type EvalFixture } from "./fixtures.js";
 import { matchValue } from "./match.js";
 
@@ -65,63 +62,11 @@ const COVER_FRACTION = 0.5;
 
 async function runFixture(f: EvalFixture): Promise<FixtureResult> {
   const basePng = await sharp(Buffer.from(f.svg)).png().toBuffer();
-  const pngDataUrl = `data:image/png;base64,${basePng.toString("base64")}`;
-
-  const ocr = await runOcr(pngDataUrl);
-  const nerSpans = await runNer(ocr.joined);
-
-  const { data, info } = await sharp(basePng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const textLikelihoodBoxes = textLikelihoodRegions({ data, width: info.width, height: info.height, channels: info.channels });
-
-  // Scoped second-pass rescue (see ocr-rescue.ts): only attempted on boxes
-  // the whole-image OCR pass already completely missed (0 overlap), using
-  // the SAME definition fuse.ts itself uses for "blind spot" — kept
-  // identical deliberately so this never rescues a box fuse.ts wouldn't
-  // otherwise fail-close, and never skips one it would.
-  const blindSpots = textLikelihoodBoxes.filter((box) => !ocr.words.some((w) => iou(w.bbox, box) > 0));
-  // Blind-spot boxes are frequently per-character/per-fragment (connected
-  // components split low-contrast text at glyph gaps) rather than one
-  // line box — merge same-row fragments first so the rescue crop has a
-  // full line of context, not an isolated 1-3 character sliver (see
-  // mergeRowBoxes's doc comment for the empirical evidence).
-  const rescueBoxes = mergeRowBoxes(blindSpots);
-  const rawImg = { data, width: info.width, height: info.height, channels: info.channels };
-  const rescueIo = {
-    encode: async (crop: RawImage) => {
-      const cropPng = await sharp(Buffer.from(crop.data.buffer, crop.data.byteOffset, crop.data.byteLength), {
-        raw: { width: crop.width, height: crop.height, channels: 4 },
-      }).png().toBuffer();
-      return `data:image/png;base64,${cropPng.toString("base64")}`;
-    },
-    ocr: runOcr,
-    ner: runNer,
-  };
-  const rescuedRegions: { bbox: BBox; category: PiiCategory; value: string }[] = [];
-  for (const box of rescueBoxes) {
-    const hit = await rescueBlindSpot(rawImg, box, rescueIo);
-    if (hit) rescuedRegions.push(hit);
-  }
-
-  const meta = await sharp(basePng).metadata();
-  const { manifest, mapping } = assemblePerception({
+  const { mapping, redacted } = await runPerception(basePng, {
     task: f.task,
-    image: { w: meta.width ?? 640, h: meta.height ?? 320, dpr: 1 },
     domRegions: f.domRegions,
     domSensitive: f.domSensitive,
-    faces: [],
-    ocrWords: ocr.words,
-    ocrJoined: ocr.joined,
-    ocrOffsets: ocr.offsets,
-    nerSpans,
-    degraded: false,
-    textLikelihoodBoxes,
-    rescuedRegions,
   });
-
-  const redacted = manifest.regions.filter((r) => r.kind === "redacted") as Extract<
-    (typeof manifest.regions)[number],
-    { kind: "redacted" }
-  >[];
 
   // EVAL_VERBOSE=1: dump every redacted region (fixtures are synthetic, so
   // printing resolved values is safe here) to attribute over-masks and boxes.
@@ -318,9 +263,10 @@ works:
    intuitively "should" be at least as good, was consistently WORSE and
    misread a "2" as "Z"), so \`rescueBlindSpot\` instead tries a small
    spread of upscale factors (\`RESCUE_CANDIDATES\`) in order and keeps the
-   FIRST one whose reading actually validates — passes the same
-   structured-PII/NER/label detectors real OCR text goes through
-   (\`extractRescuedPii\`) — rather than trusting whichever one Tesseract
+   FIRST one whose reading actually validates — a checksum/pattern-valid
+   identifier or a label-anchored name (\`extractRescuedPii\`; NER is
+   deliberately NOT used here, because on recovered noise it fabricated a
+   person from a photo and from a button caption) — rather than trusting whichever one Tesseract
    merely produced SOME text for. A candidate that reads garbage costs one
    wasted OCR call on an already-small, already-rare crop and is otherwise
    harmless. On this benchmark it now recovers the EXACT value for both
@@ -370,11 +316,15 @@ benchmark, not a claim that all OCR blind spots are now recoverable.
   line (plain fixtures) or a whole table cell (dark-ui-login-roster), not a
   glyph-tight box, so this proves "the right line/cell was blacked out", not
   "every pixel of the value was".
-- The over-masking rate rose from 0.0% to ${pct(b.totalOverMasks, b.totalRedactedValueBearing)} when the
-  \`dark-ui-login-roster\` fixture was added. Nothing regressed: the earlier
-  0.0% was measured only on plain text lines on white, which cannot show
-  over-masking of buttons, labels or page chrome. The remaining over-mask is
-  the NER model tagging the button text "Sign" as a person.
+- The over-masking rate here is ${pct(b.totalOverMasks, b.totalRedactedValueBearing)}. Adding the
+  \`dark-ui-login-roster\` fixture first pushed it up (the earlier 0.0% was
+  measured only on plain text lines on white, which cannot show over-masking of
+  buttons, labels or page chrome). It came back down by removing two structural
+  causes, not by tuning to the fixtures: rescue no longer accepts NER-only
+  readings (NER turned the button caption "Sign in" into a person), and a value
+  fragment inside a larger region that already carries the full value (NER
+  tagging "41" inside a card number) is dropped. It is still 0 of a small
+  number, not evidence that over-masking is solved.
 - The value-bearing over-masking rate never counted value-less fail-closed
   boxes, and those are exactly what the backstop adds. They are now counted
   separately ("Backstop boxes"). On the live demo page the untightened backstop
@@ -387,11 +337,34 @@ benchmark, not a claim that all OCR blind spots are now recoverable.
   they can still be blacked out. A long single line of text is kept even at an
   extreme aspect ratio. Not tested: an adversary shaping text to look like a
   thin line or an outline.
-- On the real demo page rendered in Chrome, Tesseract missed several light-on-
-  dark values that this eval's dark-ui fixture reads fine (font rendering
-  differs between headless SVG and Chrome). So this eval does NOT exercise the
-  backstop's rescue of dark-theme OCR misses; that was observed once, by hand,
-  and is not yet a regression test.
+- This eval renders clean SVG text, so it cannot show what a real Chrome page
+  does to OCR. On the real demo page (\`pnpm live\`, extension/eval/live-page.ts,
+  which drives real Chrome, the real DOM walker and the same pipeline) Tesseract
+  missed the phone, email and card values at 1x, and read the card as
+  "A111 1111111 1111" and an email as "ops.lead@vssc test". Three fixes came from
+  that, each checked there and not on these fixtures:
+  (1) whole-screenshot OCR runs at a fixed 2x for screenshots up to 1.5 MP (the
+  cause was small text, not the dark theme: inverting the image did not help,
+  and fractional factors like 1.5x were worse than 2x);
+  (2) a misread identifier (a digit-like run of 11+ digits with a lookalike
+  letter or irregular grouping, or an "@" word with no domain) is masked fail-
+  closed, because a misread fails every validator and, having been "read", is not
+  a blind spot; a regularly grouped number that only fails its checksum is left
+  alone;
+  (3) DOM element names, which the manifest sends to the server as plain text,
+  are scrubbed with the same detectors.
+  Also found there and fixed: face boxes were scaled by the device pixel ratio
+  twice, so on any display scaled above 100% the mask landed off the face.
+- \`pnpm live\` measures glyph pixels still visible under the masks for each
+  secret on the demo page at dpr 1, 1.25, 1.5 and 2 and currently reports none.
+  That is one page and four scales, in Node OCR/NER (not the browser's wasm),
+  without MediaPipe or yolos; it needs Chrome, so it is not part of \`pnpm eval\`.
+- Known limits: a bare person name in a control's text has no structure to
+  detect and is not scrubbed from DOM element names; white-on-blue button
+  captions that OCR cannot read at any scale are blacked out (fail closed) and
+  cost some visual clarity; misread detection assumes a lookalike letter or odd
+  grouping, so a misread that changes only digits and keeps regular grouping
+  would pass as a clean, checksum-failing number.
 `;
 }
 

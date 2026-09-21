@@ -14,11 +14,11 @@
  */
 import { writeFileSync } from "node:fs";
 import sharp from "sharp";
-import { runOcr, disposeOcr } from "../src/perception/ocr.js";
-import { runNer, initNer, disposeNer } from "../src/perception/ner.js";
+import { disposeOcr } from "../src/perception/ocr.js";
+import { initNer, disposeNer } from "../src/perception/ner.js";
 import { runFaces } from "../src/perception/faces.js";
-import { assemblePerception } from "../src/perception/pipeline.js";
 import { planMasks, MASK_COLOR } from "../src/redaction/mask.js";
+import { runPerception } from "../eval/harness.js";
 import { ServerResponseSchema, type PiiCategory } from "@sentrylens/shared";
 
 const RAW_PII = ["A. Menon", "Menon", "9000000000", "ops.lead@vssc.test", "ABCDE1234F", "hunter2seed"];
@@ -48,23 +48,26 @@ function hexToRgb(h: string): [number, number, number] {
 async function main() {
   const t0 = Date.now();
   const basePng = await sharp(Buffer.from(SVG)).png().toBuffer();
-  const pngDataUrl = `data:image/png;base64,${basePng.toString("base64")}`;
   ok(`rasterised roster -> PNG (${basePng.length} bytes)`);
 
-  console.log("running tesseract.js OCR (first run downloads eng traineddata)...");
-  const ocr = await runOcr(pngDataUrl);
+  // Node's onnxruntime uses "cpu"; the browser build uses "wasm"/"webgpu".
+  console.log("running the real perception path: tesseract.js OCR (first run downloads eng traineddata), PII-NER (CPU), backstop, rescue...");
+  await initNer("cpu");
+  const run = await runPerception(basePng, {
+    task: "open the telemetry report for station VSSC-03",
+    domRegions: [
+      { id: 1, bbox: [24, 236, 220, 26], source: "dom", role: "textbox", name: "Password", interactable: true },
+      { id: 2, bbox: [24, 286, 240, 26], source: "dom", role: "button", name: "Open VSSC-03 report", interactable: true },
+    ],
+    domSensitive: [{ bbox: [24, 236, 220, 26], category: "PASSWORD" as PiiCategory }],
+  });
+  const ocr = run.ocr;
   console.log(`   OCR read ${ocr.words.length} words:`, JSON.stringify(ocr.joined));
   if (!/ops\.lead@vssc\.test|ABCDE1234F|9000000000/.test(ocr.joined)) {
     fail("OCR did not recover any seeded PII - check tesseract install/network");
   }
   ok("OCR recovered seeded PII text from the raster");
-
-  // Node's onnxruntime uses "cpu"; the browser build uses "wasm"/"webgpu".
-  console.log("running @huggingface/transformers PII-NER (CPU)...");
-  await initNer("cpu");
-  const nerSpans = await runNer(ocr.joined);
-  console.log(`   NER spans:`, JSON.stringify(nerSpans));
-  ok(`NER ran (${nerSpans.length} span(s))`);
+  ok(`text-likelihood backstop ran (${run.textLikelihoodBoxes.length} text-like box(es), ${run.rescueAttempts} rescue attempt(s))`);
 
   // Best-effort real mediapipe face detection. It is a browser API; in Node it
   // usually cannot initialise. We report which happened rather than failing.
@@ -80,21 +83,7 @@ async function main() {
     console.log("   (expected - it is a browser API; the face path is covered by fuse.test.ts + verified in Chrome)");
   }
 
-  const result = assemblePerception({
-    task: "open the telemetry report for station VSSC-03",
-    image: { w: 640, h: 320, dpr: 1 },
-    domRegions: [
-      { id: 1, bbox: [24, 236, 220, 26], source: "dom", role: "textbox", name: "Password", interactable: true },
-      { id: 2, bbox: [24, 286, 240, 26], source: "dom", role: "button", name: "Open VSSC-03 report", interactable: true },
-    ],
-    domSensitive: [{ bbox: [24, 236, 220, 26], category: "PASSWORD" as PiiCategory }],
-    faces: [],
-    ocrWords: ocr.words,
-    ocrJoined: ocr.joined,
-    ocrOffsets: ocr.offsets,
-    nerSpans,
-    degraded: false,
-  });
+  const result = { manifest: run.manifest, mapping: run.mapping };
 
   const manifestJson = JSON.stringify(result.manifest);
   const leaked = RAW_PII.filter((s) => manifestJson.includes(s));

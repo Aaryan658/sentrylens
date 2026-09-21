@@ -12,11 +12,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import sharp from "sharp";
 import type { Region } from "@sentrylens/shared";
-import { runOcr, disposeOcr } from "../src/perception/ocr.js";
-import { runNer, initNer, disposeNer } from "../src/perception/ner.js";
-import { assemblePerception } from "../src/perception/pipeline.js";
-import { textLikelihoodRegions } from "../src/perception/text-likelihood.js";
-import { planMasks, MASK_COLOR } from "../src/redaction/mask.js";
+import { disposeOcr } from "../src/perception/ocr.js";
+import { initNer, disposeNer } from "../src/perception/ner.js";
+import { planMasks, planLabelDraw, MASK_COLOR } from "../src/redaction/mask.js";
+import { runPerception } from "./harness.js";
 
 const W = 1000;
 const H = 620;
@@ -60,7 +59,8 @@ const domSensitive = [{ bbox: [250, 410, 300, 40] as [number, number, number, nu
 
 async function paint(basePng: Buffer, regions: unknown[]): Promise<Buffer> {
   const ops = planMasks(regions as never);
-  const layers = ops.map((op) => {
+  const drawLabel = planLabelDraw(ops);
+  const layers = ops.map((op, i) => {
     const [x, y, bw, bh] = op.bbox;
     const left = Math.max(0, Math.round(x));
     const top = Math.max(0, Math.round(y));
@@ -68,7 +68,7 @@ async function paint(basePng: Buffer, regions: unknown[]): Promise<Buffer> {
     const height = Math.max(1, Math.min(Math.round(bh), H - top));
     const fontPx = Math.max(9, Math.min(14, Math.floor(height * 0.6)));
     const label = op.label.length * fontPx * 0.6 <= width - 4 ? op.label : op.label.split("#")[0]!;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${MASK_COLOR}"/><text x="2" y="${height / 2}" dominant-baseline="middle" font-family="monospace" font-size="${fontPx}" fill="#F5F5F5">${label}</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${MASK_COLOR}"/>${drawLabel[i] ? `<text x="2" y="${height / 2}" dominant-baseline="middle" font-family="monospace" font-size="${fontPx}" fill="#F5F5F5">${label}</text>` : ""}</svg>`;
     return { input: Buffer.from(svg), left, top };
   });
   return sharp(basePng).composite(layers).png().toBuffer();
@@ -81,28 +81,14 @@ async function main() {
   const basePng = await sharp(Buffer.from(SVG)).png().toBuffer();
   writeFileSync(resolve(outDir, "before.png"), basePng);
 
-  const ocr = await runOcr(`data:image/png;base64,${basePng.toString("base64")}`);
   await initNer("cpu");
-  const nerSpans = await runNer(ocr.joined);
-  const { data, info } = await sharp(basePng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const textLikelihoodBoxes = textLikelihoodRegions({ data, width: info.width, height: info.height, channels: info.channels });
+  let ocrRead = "";
 
-  const common = {
-    task: TASK,
-    image: { w: W, h: H, dpr: 1 },
-    domRegions,
-    domSensitive,
-    faces: [] as [number, number, number, number][],
-    ocrWords: ocr.words,
-    ocrJoined: ocr.joined,
-    ocrOffsets: ocr.offsets,
-    nerSpans,
-    degraded: false,
-  };
-
-  for (const [name, boxes] of [["after", textLikelihoodBoxes], ["_after-without-backstop", []]] as const) {
-    const { manifest } = assemblePerception({ ...common, textLikelihoodBoxes: [...boxes] });
-    const redacted = manifest.regions.filter((r) => r.kind === "redacted") as Array<{
+  // The same pipeline the extension runs (2x OCR, backstop, rescue, scrubbing).
+  for (const [name, backstop] of [["after", true], ["_after-without-backstop", false]] as const) {
+    const run = await runPerception(basePng, { task: TASK, domRegions, domSensitive, backstop });
+    ocrRead = run.ocr.joined;
+    const redacted = run.redacted as unknown as Array<{
       category: string; placeholder: string; value_len: number | null; risk: string; task_necessary: boolean;
       detected_by: string[]; bbox: [number, number, number, number];
     }>;
@@ -124,7 +110,7 @@ async function main() {
     }
   }
 
-  console.log(`\nOCR read: ${JSON.stringify(ocr.joined)}`);
+  console.log(`\nOCR read: ${JSON.stringify(ocrRead)}`);
   await Promise.allSettled([disposeOcr(), disposeNer()]);
   console.log("DONE");
   setImmediate(() => process.exit(0));

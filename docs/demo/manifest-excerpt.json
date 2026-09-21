@@ -10,28 +10,28 @@
     },
     {
       "category": "EMAIL",
-      "placeholder": "EMAIL#qw64v",
+      "placeholder": "EMAIL#l4ldq",
       "value_len": 17,
       "risk": "medium",
       "task_necessary": false
     },
     {
       "category": "PAN",
-      "placeholder": "PAN#uyhox",
+      "placeholder": "PAN#tr4xm",
       "value_len": 10,
       "risk": "high",
       "task_necessary": false
     },
     {
       "category": "PHONE_NUMBER",
-      "placeholder": "PHONE_NUMBER#jvrdm",
+      "placeholder": "PHONE_NUMBER#s4m7a",
       "value_len": 10,
       "risk": "medium",
       "task_necessary": false
     },
     {
       "category": "PERSON_NAME",
-      "placeholder": "PERSON_NAME#bfa4a",
+      "placeholder": "PERSON_NAME#6nhe2",
       "value_len": 8,
       "risk": "medium",
       "task_necessary": false

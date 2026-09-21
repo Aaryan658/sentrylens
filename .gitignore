@@ -21,3 +21,6 @@ dist/
 
 # local-only demo assets (real photos etc.) — never published
 demo/assets/
+
+# real-Chrome harness output (contains the local demo photo) - never commit
+**/eval/.live/

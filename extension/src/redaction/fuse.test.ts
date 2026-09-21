@@ -54,6 +54,60 @@ describe("fuseRegions", () => {
     expect(out.find((r) => r.category === "OTHER")!.bbox).toEqual([400, 22, 80, 14]);
   });
 
+  it("fails closed on a MISREAD card number (real Chrome read 'A111 1111111 1111', which no validator accepts)", () => {
+    const words = [
+      { text: "Payroll", bbox: [10, 100, 56, 12] as [number, number, number, number] },
+      { text: "card", bbox: [72, 100, 32, 12] as [number, number, number, number] },
+      { text: "A111", bbox: [200, 100, 32, 12] as [number, number, number, number] },
+      { text: "1111111", bbox: [238, 100, 56, 12] as [number, number, number, number] },
+      { text: "1111", bbox: [300, 100, 32, 12] as [number, number, number, number] },
+    ];
+    const out = fuseRegions({ ...empty, ocrWords: words, ocrJoined: words.map((w) => w.text).join(" "), ocrOffsets: [0, 8, 13, 18, 26] });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.detected_by).toEqual(["heuristic"]);
+    expect(out[0]!.bbox).toEqual([200, 100, 132, 12]);
+  });
+
+  it("fails closed on an email whose dot OCR dropped ('ops.lead@vssc test')", () => {
+    const words = [
+      { text: "ops.lead@vssc", bbox: [100, 50, 104, 12] as [number, number, number, number] },
+      { text: "test", bbox: [210, 50, 32, 12] as [number, number, number, number] },
+    ];
+    const out = fuseRegions({ ...empty, ocrWords: words, ocrJoined: "ops.lead@vssc test", ocrOffsets: [0, 14] });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.category).toBe("EMAIL");
+    expect(out[0]!.bbox).toEqual([100, 50, 142, 12]);
+  });
+
+  it("does not mask a clean, regularly grouped number that merely fails its checksum", () => {
+    const words = ["4111", "1111", "1111", "1112"].map((text, i) => ({ text, bbox: [10 + i * 40, 20, 32, 12] as [number, number, number, number] }));
+    const out = fuseRegions({ ...empty, ocrWords: words, ocrJoined: "4111 1111 1111 1112", ocrOffsets: [0, 5, 10, 15] });
+    expect(out).toEqual([]);
+  });
+
+  it("drops a value fragment that sits inside a larger region already carrying the full value (NER tagged '41' inside a card number)", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      ocrWords: [{ text: "4111", bbox: [10, 10, 40, 14] }, { text: "1111", bbox: [56, 10, 40, 14] }, { text: "1111", bbox: [102, 10, 40, 14] }, { text: "1111", bbox: [148, 10, 40, 14] }],
+      ocrJoined: "4111 1111 1111 1111",
+      ocrOffsets: [0, 5, 10, 15],
+      nerSpans: [{ category: "CREDIT_CARD", value: "41", start: 0, end: 2 }],
+    };
+    const out = fuseRegions(inp);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.value).toBe("4111 1111 1111 1111");
+  });
+
+  it("keeps two DIFFERENT values that merely touch (a fragment rule must not swallow distinct items)", () => {
+    const inp: PerceptionInputs = {
+      ...empty,
+      ocrWords: [{ text: "ops@vssc.test", bbox: [10, 10, 100, 14] }, { text: "9000000000", bbox: [10, 40, 80, 14] }],
+      ocrJoined: "ops@vssc.test 9000000000",
+      ocrOffsets: [0, 14],
+    };
+    expect(fuseRegions(inp).map((r) => r.category).sort()).toEqual(["EMAIL", "PHONE_NUMBER"]);
+  });
+
   it("promotes a face to high confidence when the page is sensitive", () => {
     const out = fuseRegions({ ...empty, faces: [[0, 0, 10, 10]], pageSensitive: true });
     expect(out[0]!.confidence).toBeGreaterThanOrEqual(0.9);

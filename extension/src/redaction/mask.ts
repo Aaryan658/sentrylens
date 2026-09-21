@@ -44,6 +44,36 @@ export function planMasks(regions: RedactedRegion[]): MaskOp[] {
   });
 }
 
+// Approximate monospace label extent, mirroring drawLabel's font and fit rules.
+function labelRect(op: MaskOp): [number, number, number, number] {
+  const [x, y, w, h] = op.bbox;
+  const fontPx = Math.max(9, Math.min(14, Math.floor(h * 0.6)));
+  const text = op.label.length * fontPx * 0.6 <= w - 4 ? op.label : op.label.split("#")[0]!;
+  const tw = Math.min(text.length * fontPx * 0.6, Math.max(0, w - 4));
+  return [x + 2, y + h / 2 - fontPx / 2, tw, fontPx];
+}
+
+/**
+ * Which masks get their label drawn. Nested or overlapping masks (a DOM cell box
+ * around an OCR name box) would draw their labels on top of each other and
+ * garble both, so a label is drawn only if it does not collide with one already
+ * claimed. The smaller, more specific mask claims first. Never affects the
+ * fills: every mask is still fully painted.
+ */
+export function planLabelDraw(ops: MaskOp[]): boolean[] {
+  const order = ops.map((_, i) => i).sort((a, b) => ops[a]!.bbox[2] * ops[a]!.bbox[3] - ops[b]!.bbox[2] * ops[b]!.bbox[3]);
+  const drawn: [number, number, number, number][] = [];
+  const out = new Array<boolean>(ops.length).fill(false);
+  for (const i of order) {
+    const r = labelRect(ops[i]!);
+    const clash = drawn.some((d) => r[0] < d[0] + d[2] && r[0] + r[2] > d[0] && r[1] < d[1] + d[3] && r[1] + r[3] > d[1]);
+    if (clash) continue;
+    drawn.push(r);
+    out[i] = true;
+  }
+  return out;
+}
+
 /**
  * Paints opaque masks over each redacted region on a copy of the source bitmap
  * and returns a PNG data URL. Runs in the offscreen document (has DOM + canvas).
@@ -57,7 +87,10 @@ export async function maskImage(pngDataUrl: string, regions: RedactedRegion[]): 
   const ctx = canvas.getContext("2d")!;
   ctx.drawImage(img, 0, 0);
 
-  for (const op of planMasks(regions)) {
+  const ops = planMasks(regions);
+  // All fills first, then labels, so a later mask can never paint over an
+  // earlier mask's label; and only labels that do not collide are drawn.
+  for (const op of ops) {
     const [x, y, w, h] = op.bbox;
     if (op.fill === "pixelate") {
       pixelate(ctx, x, y, w, h, op.block);
@@ -65,8 +98,11 @@ export async function maskImage(pngDataUrl: string, regions: RedactedRegion[]): 
       ctx.fillStyle = MASK_COLOR;
       ctx.fillRect(x, y, w, h);
     }
-    drawLabel(ctx, op.label, x, y, w, h);
   }
+  const draw = planLabelDraw(ops);
+  ops.forEach((op, i) => {
+    if (draw[i]) drawLabel(ctx, op.label, ...op.bbox);
+  });
   return canvas.toDataURL("image/png");
 }
 

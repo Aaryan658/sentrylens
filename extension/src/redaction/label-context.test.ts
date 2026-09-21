@@ -104,10 +104,14 @@ describe("inferCategoryFromLabel", () => {
     expect(inferCategoryFromLabel(blindSpot, ocrWords as any)).toBeNull();
   });
 
-  it("uses a label directly above the blind spot (label-over-input forms)", () => {
-    const ocrWords = [{ text: "Password", bbox: [37, 200, 70, 16] as const }];
-    const blindSpot: [number, number, number, number] = [37, 226, 278, 32];
-    expect(inferCategoryFromLabel(blindSpot, ocrWords as any)).toBe("PASSWORD");
+  it("does NOT infer from a label above: in a table that is the previous row's label (put PAN on the Aadhaar label, CREDIT_CARD on a photo)", () => {
+    // 'PAN' row above, and the blind spot is the NEXT row's label cell, same column
+    const ocrWords = [{ text: "PAN", bbox: [46, 526, 30, 14] as const }];
+    const nextRowLabelCell: [number, number, number, number] = [44, 563, 56, 14];
+    expect(inferCategoryFromLabel(nextRowLabelCell, ocrWords as any)).toBeNull();
+    // and a 'card' label well above-left of a photo
+    const card = [{ text: "card", bbox: [150, 905, 40, 14] as const }];
+    expect(inferCategoryFromLabel([452, 947, 72, 72], card as any)).toBeNull();
   });
 
   it("ignores a label that sits after or below the blind spot (a label precedes its value)", () => {

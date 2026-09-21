@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planMasks, MASK_PAD } from "./mask.js";
+import { planMasks, planLabelDraw, MASK_PAD } from "./mask.js";
 import type { RedactedRegion } from "@sentrylens/shared";
 
 const region = (over: Partial<RedactedRegion> = {}): RedactedRegion => ({
@@ -50,6 +50,26 @@ describe("planMasks", () => {
   it("carries the placeholder as the label, never a raw value", () => {
     const op = planMasks([region({ placeholder: "AADHAAR#z9y8x" })])[0]!;
     expect(op.label).toBe("AADHAAR#z9y8x");
+  });
+
+  it("draws only one label where two masks' labels would collide (a DOM cell box around an OCR name box garbled both)", () => {
+    const ops = planMasks([
+      region({ id: 1, bbox: [293, 407, 430, 36], placeholder: "PERSON_NAME#1", category: "PERSON_NAME" }), // big DOM cell
+      region({ id: 2, bbox: [301, 421, 61, 11], placeholder: "PERSON_NAME#pq33z", category: "PERSON_NAME" }), // name inside it
+    ]);
+    const draw = planLabelDraw(ops);
+    expect(draw.filter(Boolean)).toHaveLength(1);
+    // the smaller, more specific mask keeps its label
+    expect(draw[1]).toBe(true);
+    expect(draw[0]).toBe(false);
+  });
+
+  it("draws every label when they do not collide", () => {
+    const ops = planMasks([
+      region({ id: 1, bbox: [10, 10, 100, 16], placeholder: "EMAIL#aaaaa" }),
+      region({ id: 2, bbox: [10, 60, 100, 16], placeholder: "PHONE_NUMBER#bbbbb" }),
+    ]);
+    expect(planLabelDraw(ops)).toEqual([true, true]);
   });
 
   it("an empty region list plans nothing", () => {

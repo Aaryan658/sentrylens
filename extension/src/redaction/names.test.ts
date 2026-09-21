@@ -61,6 +61,17 @@ describe("findLabeledNames", () => {
     expect(hits[0]!.value).toBe("Anita");
   });
 
+  it("tolerates a stray period after the label when a two-token name follows (real Chrome OCR read 'Operator. A Menon')", () => {
+    const hits = findLabeledNames("Field Value Operator. A Menon Phone 9000000000");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.value).toBe("A Menon");
+  });
+
+  it("does not treat the start of the next sentence after 'label.' as a name", () => {
+    expect(findLabeledNames("Contact. Please call the desk")).toHaveLength(0);
+    expect(findLabeledNames("Operator. Sign in to continue")).toHaveLength(0);
+  });
+
   it("handles a label with a trailing colon", () => {
     const hits = findLabeledNames("Patient: Meera Nair");
     expect(hits).toHaveLength(1);

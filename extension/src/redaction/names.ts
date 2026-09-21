@@ -9,7 +9,7 @@ const LABEL_ALT = [...PERSON_LABELS]
   .sort((a, b) => b.length - a.length)
   .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
   .join("|");
-const LABEL_RE = new RegExp(`\\b(?:${LABEL_ALT})\\b\\s*:?\\s*`, "gi");
+const LABEL_RE = new RegExp(`\\b(?:${LABEL_ALT})\\b(?:\\s*:|\\.)?\\s*`, "gi");
 // Capped at 2 tokens ("A." + "Menon", or "Anita" + "Rao"): OCR-joined screen
 // text has no punctuation between adjacent fields, so an uncapped pattern
 // greedily swallows the next field's capitalized label too — e.g. matching
@@ -53,6 +53,9 @@ export function findLabeledNames(text: string): StructuredHit[] {
     const tokens = nm[0].trim().split(/\s+/);
     while (tokens.length && FIELD_WORDS.has(tokens[tokens.length - 1]!.toLowerCase().replace(/[^a-z]/g, ""))) tokens.pop();
     if (tokens.length === 0 || FIELD_WORDS.has(tokens[0]!.toLowerCase().replace(/[^a-z]/g, ""))) continue;
+    // "Operator." is usually the end of a sentence (or an OCR speck), so what
+    // follows is only trusted as a name when it has the initial+surname shape.
+    if (/\.\s*$/.test(m[0]) && tokens.length < 2) continue;
     const value = tokens.join(" ");
     const start = afterLabel + nm[0].indexOf(tokens[0]!);
     hits.push({ category: "PERSON_NAME" as PiiCategory, value, start, end: start + value.length });

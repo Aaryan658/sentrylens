@@ -3,6 +3,7 @@ import { iou, unionBox, mergeRowBoxes } from "./geometry.js";
 import { findStructuredPii, findStructuredPiiDespaced } from "./validators.js";
 import { findLabeledNames } from "./names.js";
 import { inferCategoryFromLabel } from "./label-context.js";
+import { findSuspectNumericRuns, findSuspectEmailFragments } from "./suspect.js";
 import type { PerceptionInputs, SensitiveRegion } from "./types.js";
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9@.]/g, "");
@@ -132,6 +133,16 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
     raw.push({ bbox: box, category, value: null, confidence: 0.5, detected_by: ["heuristic"] });
   }
 
+  // OCR can also read the WRONG thing (see suspect.ts): a misread identifier
+  // fails every validator, and since OCR "read" it, the blind-spot pass above
+  // treats it as legible. Recognise the misread's signature and fail closed.
+  for (const box of findSuspectNumericRuns(inp.ocrWords)) {
+    raw.push({ bbox: box, category: "OTHER", value: null, confidence: 0.5, detected_by: ["heuristic"] });
+  }
+  for (const box of findSuspectEmailFragments(inp.ocrWords)) {
+    raw.push({ bbox: box, category: "EMAIL", value: null, confidence: 0.5, detected_by: ["heuristic"] });
+  }
+
   const out: SensitiveRegion[] = [];
   for (const r of raw) {
     const hit = out.find((o) => iou(o.bbox, r.bbox) > 0.6);
@@ -143,11 +154,14 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
   // A blind-spot box that sits entirely inside some other redacted region is
   // already masked by it: keeping it adds no coverage, only a duplicate region
   // (e.g. the dots inside a DOM-flagged password field).
-  return out.filter(
-    (r) =>
-      !(r.detected_by.length === 1 && r.detected_by[0] === "heuristic") ||
-      !out.some((o) => o !== r && contains(o.bbox, r.bbox)),
-  );
+  const compact = (s: string) => s.replace(/\s+/g, "");
+  return out.filter((r) => {
+    // ...and a value that is just a fragment of the full value another region
+    // already carries over a box that contains it (NER tagging "41" inside a
+    // card number): no extra coverage, and a meaningless placeholder.
+    if (r.value != null && out.some((o) => o !== r && o.value != null && compact(o.value).length > compact(r.value!).length && compact(o.value).includes(compact(r.value!)) && contains(o.bbox, r.bbox))) return false;
+    return !(r.detected_by.length === 1 && r.detected_by[0] === "heuristic") || !out.some((o) => o !== r && contains(o.bbox, r.bbox));
+  });
 }
 
 const CONTAIN_TOLERANCE = 2;

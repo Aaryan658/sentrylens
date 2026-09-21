@@ -69,32 +69,26 @@ const MAX_LABEL_WORDS = 3;
 // A label and its value on the same row are often separated by wide
 // whitespace (form alignment, OCR word gaps), so this is generous.
 const MAX_SAME_ROW_GAP = 120;
-// A label ABOVE its value (label-over-input forms) sits about one line above;
-// anything further up is a different field's label, not this one's.
-const MAX_ABOVE_GAP = 24;
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z ]/g, "").trim();
 }
 
 /**
- * How far `label` is from `box` if it plausibly labels it, else null. A label
- * precedes its value: it is either to the left on the same row, or directly
- * above. Anything else (a different row, below, to the right) is not this
- * blind spot's label; guessing from it mislabels the region.
+ * How far `label` is from `box` if it plausibly labels it, else null. Only a
+ * label to the LEFT on the SAME row counts. A "label above" rule was tried and
+ * removed: in a table the label above is the previous row's label (it put PAN on
+ * the Aadhaar label cell and CREDIT_CARD on a photo), and its gap (~22px) is
+ * indistinguishable from a real label-over-input gap (~15px), so no threshold
+ * separates them. Guessing wrong is worse than not guessing.
  */
 function labelDistance(label: BBox, box: BBox): number | null {
   const [lx, ly, lw, lh] = label;
-  const [bx, by, bw, bh] = box;
+  const [bx, by, , bh] = box;
   const rowOverlap = Math.min(ly + lh, by + bh) - Math.max(ly, by);
-  if (rowOverlap > 0.4 * Math.min(lh, bh)) {
-    const gap = bx - (lx + lw);
-    return gap >= -4 && gap <= MAX_SAME_ROW_GAP ? Math.max(0, gap) : null;
-  }
-  const colOverlap = Math.min(lx + lw, bx + bw) - Math.max(lx, bx);
-  const gap = by - (ly + lh);
-  if (colOverlap > 0 && gap >= -4 && gap <= MAX_ABOVE_GAP) return Math.max(0, gap);
-  return null;
+  if (rowOverlap <= 0.4 * Math.min(lh, bh)) return null;
+  const gap = bx - (lx + lw);
+  return gap >= -4 && gap <= MAX_SAME_ROW_GAP ? Math.max(0, gap) : null;
 }
 
 /**

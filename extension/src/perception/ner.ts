@@ -24,15 +24,25 @@ const LABEL_MAP: Record<string, PiiCategory> = {
 
 export type NerDevice = "webgpu" | "wasm" | "cpu";
 
-export async function initNer(device: NerDevice): Promise<void> {
-  if (ner) return;
-  configureTransformers();
-  ner = await pipeline("token-classification", "onnx-community/multilang-pii-ner-ONNX", {
-    device, dtype: device === "webgpu" ? "q4" : "q8",
-  });
+// Shared in-flight load: the offscreen page starts loading models at startup
+// while a task may call initNer at the same moment, and two concurrent loads
+// would each download and hold the model. A failed load clears itself so a
+// later call can retry instead of caching the failure.
+let nerLoading: Promise<void> | null = null;
+
+export function initNer(device: NerDevice): Promise<void> {
+  if (ner) return Promise.resolve();
+  nerLoading ??= (async () => {
+    configureTransformers();
+    ner = await pipeline("token-classification", "onnx-community/multilang-pii-ner-ONNX", {
+      device, dtype: device === "webgpu" ? "q4" : "q8",
+    });
+  })().finally(() => { nerLoading = null; });
+  return nerLoading;
 }
 
 export async function disposeNer(): Promise<void> {
+  await nerLoading?.catch(() => {});
   await ner?.dispose?.();
   ner = null;
 }

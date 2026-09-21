@@ -1,8 +1,8 @@
 import "../../src/perception/env";
 import { Msg } from "../../src/messaging";
-import { runOcr } from "../../src/perception/ocr";
+import { runOcr, runOcrScaled, initOcr } from "../../src/perception/ocr";
 import { runNer, initNer } from "../../src/perception/ner";
-import { runFaces } from "../../src/perception/faces";
+import { runFaces, initFaces } from "../../src/perception/faces";
 import { runDetector, initDetector } from "../../src/perception/detector";
 import { initVlm, screenSummary } from "../../src/perception/vlm";
 import { assemblePerception } from "../../src/perception/pipeline";
@@ -16,10 +16,40 @@ import type { AgentAction, PiiCategory } from "@sentrylens/shared";
 
 let session = new MappingTable();
 
+// Canvas resample used to OCR small screenshots at 2x (see ocr.ts OCR_UPSCALE).
+async function upscaleDataUrl(dataUrl: string, factor: number): Promise<string> {
+  const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const canvas = new OffscreenCanvas(Math.round(bmp.width * factor), Math.round(bmp.height * factor));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2d context unavailable");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  return await new Promise<string>((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result));
+    fr.onerror = () => rej(fr.error ?? new Error("FileReader failed"));
+    fr.readAsDataURL(blob);
+  });
+}
+
 async function hasWebGpu(): Promise<boolean> {
   try { return !!(await (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu?.requestAdapter()); }
   catch { return false; }
 }
+
+// Start loading every on-device model as soon as this page exists (the
+// background creates it at install/startup), so the first task neither pays for
+// nor times out on the downloads. A degraded run now stops the task rather than
+// sending a weaker mask, so a cold first run must not be routine. Loads share
+// their in-flight promise with the per-task init calls below.
+void (async () => {
+  const device: "webgpu" | "wasm" = (await hasWebGpu()) ? "webgpu" : "wasm";
+  const results = await Promise.allSettled([initOcr(), initNer(device), initFaces(), initDetector(device)]);
+  const failed = results.filter((r) => r.status === "rejected").length;
+  console.log(`[sentrylens] model warm-up finished, ${failed} failed (retried on first use)`);
+})();
 
 chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   if (msg?.target !== "offscreen") return false;
@@ -57,8 +87,13 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
         try { await withTimeout(fn(), ms, name); console.log(`[sentrylens] ${name} ok`); }
         catch (e) { if (!optional) degraded = true; console.warn(`[sentrylens] ${name} failed:`, e); }
       };
-      await tryStep("ocr", async () => { ocr = await runOcr(png); });
-      await tryStep("ner", async () => { await initNer(device); nerSpans = await runNer(ocr.joined); });
+      await tryStep("ocr", async () => {
+        const bmp = await createImageBitmap(await (await fetch(png)).blob());
+        ocr = await runOcrScaled(png, { w: bmp.width, h: bmp.height }, upscaleDataUrl);
+      });
+      // 120s: on a cold first run this waits for the model download that the
+      // startup warm-up began, instead of failing (and now stopping the task).
+      await tryStep("ner", async () => { await initNer(device); nerSpans = await runNer(ocr.joined); }, { ms: 120000 });
       await tryStep("faces", async () => {
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         faces = await runFaces(bmp);
@@ -118,7 +153,6 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
             return cropCanvas.toDataURL("image/png");
           },
           ocr: runOcr,
-          ner: runNer,
         };
         for (const box of rescueBoxes) {
           const hit = await rescueBlindSpot(rawImg, box, rescueIo);

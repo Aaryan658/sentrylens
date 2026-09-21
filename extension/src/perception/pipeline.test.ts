@@ -23,6 +23,55 @@ describe("assemblePerception", () => {
     expect(result.mapping.resolve(emailRegion.placeholder)).toBe("ops@vssc.test");
   });
 
+  it("scrubs PII out of DOM element names, which travel to the server in the manifest as plain text", () => {
+    const result = assemblePerception({
+      task: "t",
+      image: { w: 400, h: 300, dpr: 1 },
+      domRegions: [
+        { id: 1, bbox: [0, 0, 120, 20], source: "dom", role: "link", name: "Signed in as john.doe@mail.com", interactable: true },
+        { id: 2, bbox: [0, 30, 120, 20], source: "dom", role: "link", name: "Call 9000000000", interactable: true },
+        { id: 3, bbox: [0, 60, 120, 20], source: "dom", role: "button", name: "Open VSSC-03 report", interactable: true },
+      ],
+      domSensitive: [],
+      faces: [],
+      ocrWords: [],
+      ocrJoined: "",
+      ocrOffsets: [],
+      nerSpans: [],
+      degraded: false,
+    });
+    const json = JSON.stringify(result.manifest);
+    expect(json).not.toContain("john.doe@mail.com");
+    expect(json).not.toContain("9000000000");
+    const text = (id: number) => (result.manifest.regions.find((r) => r.kind === "element" && r.id === id) as any).text as string;
+    expect(text(3)).toBe("Open VSSC-03 report"); // ordinary names are untouched
+    // the agent can still refer to the redacted value, and the client resolves it locally
+    const ph = result.mapping.placeholderFor("EMAIL", "john.doe@mail.com");
+    expect(text(1)).toBe(`Signed in as ${ph}`);
+    expect(result.mapping.resolve(ph)).toBe("john.doe@mail.com");
+  });
+
+  it("keeps face boxes in image pixels but scales DOM boxes by dpr (MediaPipe reports bitmap px)", () => {
+    const dpr = 1.5;
+    const result = assemblePerception({
+      task: "t",
+      image: { w: 300, h: 300, dpr },
+      domRegions: [],
+      // CSS px: must be scaled to image px
+      domSensitive: [{ bbox: [10, 100, 80, 16], category: "PASSWORD" }],
+      // already image px, exactly as runFaces returns them: must NOT be scaled again
+      faces: [[120, 30, 60, 60]],
+      ocrWords: [],
+      ocrJoined: "",
+      ocrOffsets: [],
+      nerSpans: [],
+      degraded: false,
+    });
+    const box = (cat: string) => (result.manifest.regions.find((r) => r.kind === "redacted" && r.category === cat) as any).bbox;
+    expect(box("FACE")).toEqual([120, 30, 60, 60]);
+    expect(box("PASSWORD")).toEqual([15, 150, 120, 24]);
+  });
+
   it("passes detectorBoxes through to fusion as BYSTANDER_SCREEN", () => {
     const result = assemblePerception({
       task: "open the report",

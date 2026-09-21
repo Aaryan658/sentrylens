@@ -95,26 +95,27 @@ describe("prepareRescueCrop", () => {
 
 describe("extractRescuedPii", () => {
   it("prefers a structured-regex hit (e.g. a valid Aadhaar number) from the crop's OCR text", () => {
-    const hit = extractRescuedPii("2341 2341 2346", []);
+    const hit = extractRescuedPii("2341 2341 2346");
     expect(hit).toEqual({ category: "AADHAAR", value: "2341 2341 2346" });
   });
 
-  it("falls back to a supplied NER span when no structured pattern matches", () => {
-    const hit = extractRescuedPii("Anita Rao", [{ category: "PERSON_NAME", value: "Anita Rao", start: 0, end: 9 }]);
-    expect(hit).toEqual({ category: "PERSON_NAME", value: "Anita Rao" });
-  });
-
-  it("falls back to a labeled-name match when neither regex nor NER finds anything", () => {
-    const hit = extractRescuedPii("Operator R. Iyer", []);
+  it("accepts a labeled name (needs a real label word, which noise does not produce)", () => {
+    const hit = extractRescuedPii("Operator R. Iyer");
     expect(hit).toEqual({ category: "PERSON_NAME", value: "R. Iyer" });
   });
 
+  it("does NOT turn unlabeled words into a person (NER on recovered noise fabricated 'Tey' from a photo and 'Sign' from a button)", () => {
+    expect(extractRescuedPii("Tey")).toBeNull();
+    expect(extractRescuedPii("Sign in")).toBeNull();
+    expect(extractRescuedPii("Anita Rao")).toBeNull();
+  });
+
   it("returns null when the rescued text matches no known PII shape (must not guess)", () => {
-    expect(extractRescuedPii("just some random label text", [])).toBeNull();
+    expect(extractRescuedPii("just some random label text")).toBeNull();
   });
 
   it("returns null for empty rescued text", () => {
-    expect(extractRescuedPii("", [])).toBeNull();
+    expect(extractRescuedPii("")).toBeNull();
   });
 });
 
@@ -130,7 +131,6 @@ describe("rescueBlindSpot", () => {
       io: {
         encode: async (crop: RawImage) => { encodeCalls.push(crop); return `data:fake/${attempt}`; },
         ocr: async () => ({ joined: joinedByAttempt[attempt++] ?? "" }),
-        ner: async () => [],
       },
       encodeCalls,
     };

@@ -114,16 +114,18 @@ export function prepareRescueCrop(img: RawImage, box: BBox, opts: RescueCropOpti
  * fail-closed heuristic path, exactly as if the rescue had never been
  * attempted.
  */
-export function extractRescuedPii(
-  cropJoined: string,
-  nerSpans: { category: PiiCategory; value: string; start: number; end: number }[],
-): { category: PiiCategory; value: string } | null {
+export function extractRescuedPii(cropJoined: string): { category: PiiCategory; value: string } | null {
   if (!cropJoined.trim()) return null;
   const structured = findStructuredPii(cropJoined)[0] ?? findStructuredPiiDespaced(cropJoined)[0];
   if (structured) return { category: structured.category, value: structured.value };
-  if (nerSpans[0]) return { category: nerSpans[0].category, value: nerSpans[0].value };
   const labeled = findLabeledNames(cropJoined)[0];
   if (labeled) return { category: labeled.category, value: labeled.value };
+  // Deliberately NO NER fallback. Only checksum/pattern-validated hits and
+  // label-anchored names are trustworthy on text recovered from a blind spot.
+  // NER on that text fabricates people out of noise: it turned a photo into
+  // PERSON_NAME "Tey" and the button caption "Sign in" into PERSON_NAME "Sign",
+  // putting fake values in the mapping table. A blind spot that does not
+  // validate still gets masked; it just does not claim a value it cannot back.
   return null;
 }
 
@@ -131,7 +133,6 @@ export interface RescueIo {
   /** Environment-specific: sharp in the eval harness, canvas in the browser. */
   encode: (crop: RawImage) => Promise<string>;
   ocr: (dataUrl: string) => Promise<{ joined: string }>;
-  ner: (text: string) => Promise<{ category: PiiCategory; value: string; start: number; end: number }[]>;
 }
 
 /**
@@ -154,8 +155,7 @@ export async function rescueBlindSpot(
     const crop = prepareRescueCrop(img, box, opts);
     const dataUrl = await io.encode(crop);
     const ocr = await io.ocr(dataUrl);
-    const nerSpans = await io.ner(ocr.joined);
-    const hit = extractRescuedPii(ocr.joined, nerSpans);
+    const hit = extractRescuedPii(ocr.joined);
     if (hit) return { bbox: box, category: hit.category, value: hit.value };
   }
   return null;

@@ -86,7 +86,11 @@ async function postStep(url: string, body: string) {
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+    // Create the offscreen page now so it starts loading the on-device models
+    // before the first task (see offscreen/main.ts warm-up).
+    ensureOffscreen().catch(() => {});
   });
+  chrome.runtime.onStartup.addListener(() => { ensureOffscreen().catch(() => {}); });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === Msg.SET_FIREWALL) {

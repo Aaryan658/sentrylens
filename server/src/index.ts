@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import express, { type Express } from "express";
 import { ServerRequestSchema, type ServerResponse } from "@sentrylens/shared";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./prompt.js";
@@ -30,10 +30,28 @@ const MOCK = process.env.MOCK === "1";
 
 app.get("/health", (_req, res) => res.json({ ok: true, mock: MOCK }));
 
+// Debug aid, off by default: with SENTRYLENS_CAPTURE_DIR set, save each request
+// exactly as received (masked image as a PNG, plus task/manifest/history as JSON)
+// so you can inspect what the server saw without browser DevTools. The image and
+// manifest are already masked by the extension; nothing here un-masks anything.
+function captureRequest(request: { task: string; image_b64: string; manifest: unknown; history: unknown }): void {
+  const dir = process.env.SENTRYLENS_CAPTURE_DIR;
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    writeFileSync(join(dir, `${stamp}.json`), JSON.stringify({ task: request.task, manifest: request.manifest, history: request.history }, null, 2));
+    writeFileSync(join(dir, `${stamp}.png`), Buffer.from(request.image_b64.replace(/^data:image\/\w+;base64,/, ""), "base64"));
+  } catch (err) {
+    console.warn("[sentrylens] capture failed:", err);
+  }
+}
+
 app.post("/agent/step", async (req, res) => {
   const parsed = ServerRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const request = parsed.data;
+  captureRequest(request);
 
   if (MOCK) {
     const response: ServerResponse = { action: mockRespond(request), raw: "mock" };

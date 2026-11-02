@@ -47,6 +47,13 @@ export const RedactedRegionSchema = z.object({
   style: z.enum(["blackbox", "pixelate", "blur"]),
   task_necessary: z.boolean(),
   detected_by: z.array(z.enum(["dom", "ocr+ner", "regex", "face", "detector", "heuristic"])),
+  /**
+   * The scrubbed DOM name of the control this blind-spot mask covers (e.g. the
+   * caption of a button OCR cannot read). Already present as element text in the
+   * same manifest, so it exposes nothing new; drawn on the mask so it reads
+   * "Sign in" and not "OTHER#1".
+   */
+  caption: z.string().optional(),
 });
 export type RedactedRegion = z.infer<typeof RedactedRegionSchema>;
 

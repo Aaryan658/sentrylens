@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prepareRescueCrop, extractRescuedPii, rescueBlindSpot, type RescueCropOptions } from "./ocr-rescue.js";
+import { prepareRescueCrop, extractRescuedPii, rescueBlindSpot, planRescueBoxes, type RescueCropOptions } from "./ocr-rescue.js";
 import type { RawImage } from "./text-likelihood.js";
 
 function uniformImage(width: number, height: number, gray: number): RawImage {
@@ -116,6 +116,26 @@ describe("extractRescuedPii", () => {
 
   it("returns null for empty rescued text", () => {
     expect(extractRescuedPii("")).toBeNull();
+  });
+});
+
+describe("planRescueBoxes", () => {
+  const w = (text: string, x: number, y = 100) => ({ text, bbox: [x, y, 32, 12] as [number, number, number, number] });
+
+  it("includes merged blind spots (text-like boxes no OCR word overlaps)", () => {
+    const boxes = planRescueBoxes([w("hello", 10)], [[10, 100, 32, 12], [200, 100, 20, 12], [224, 100, 20, 12]]);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]![0]).toBe(200);
+  });
+
+  it("also queues a regular digit run that FAILS its checksum, so a misread real card gets a second look", () => {
+    const words = [w("4111", 10), w("1111", 50), w("1111", 90), w("1112", 130)];
+    expect(planRescueBoxes(words, [])).toHaveLength(1);
+  });
+
+  it("does not re-read a run that already validates", () => {
+    const words = [w("4111", 10), w("1111", 50), w("1111", 90), w("1111", 130)];
+    expect(planRescueBoxes(words, [])).toEqual([]);
   });
 });
 

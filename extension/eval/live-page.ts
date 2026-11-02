@@ -21,7 +21,7 @@
  * to inject a face box in image px).
  *
  * Run from extension/:
- *   node --import tsx eval/live-page.ts [--dpr=1,1.25,1.5,2] [--w=760] [--h=800] [--check] [--face=x,y,w,h]
+ *   node --import tsx eval/live-page.ts [--page=dashboard|portal|all] [--dpr=1,1.25,1.5,2] [--w=760] [--h=800] [--check] [--face=x,y,w,h]
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -46,10 +46,27 @@ const FACE = arg("face", "");
 const CHECK = process.argv.includes("--check");
 const PORT = 9333;
 
-// What the demo page shows that must never reach the server in clear. Text
-// secrets are located by string in the DOM; the rest by selector.
-const TEXT_SECRETS = ["A. Menon", "9000000000", "ops.lead@vssc.test", "ABCDE1234F", "4321 5678 9003", "4111 1111 1111 1111"];
-const SELECTOR_SECRETS = ["#username", "#password", ".avatar"];
+const PAGE_FILTER = arg("page", "all");
+
+// What each demo page shows that must never reach the server in clear. `pixel`
+// secrets are located by string in the DOM and must be masked in the image;
+// `selectors` are boxes located by CSS selector; `manifestOnly` strings are not
+// checked in pixels (a bare name in page text has no reliable detector) but must
+// not appear anywhere in the manifest sent alongside the image.
+interface Page { id: string; file: string; prep: string; pixel: string[]; selectors: string[]; manifestOnly: string[] }
+const PAGES: Page[] = [
+  {
+    id: "dashboard", file: "demo/demo-dashboard.html", prep: `document.getElementById("login-btn").click(); 1`,
+    pixel: ["A. Menon", "9000000000", "ops.lead@vssc.test", "ABCDE1234F", "4321 5678 9003", "4111 1111 1111 1111"],
+    selectors: ["#username", "#password", ".avatar"], manifestOnly: [],
+  },
+  {
+    // light theme, serif font, links and typed text: exercises DOM-name scrubbing
+    id: "portal", file: "demo/demo-portal.html", prep: "1",
+    pixel: ["john.doe@mail.com", "9000000000", "R. Iyer", "ABCDE1234F", "4321 5678 9003", "4111 1111 1111 1111"],
+    selectors: [], manifestOnly: ["Priya Sharma"],
+  },
+];
 /** A secret fails when more than this fraction of its glyph pixels remain visible. */
 const MAX_VISIBLE_INK = 0.02;
 
@@ -130,10 +147,10 @@ async function pageTarget(): Promise<string> {
 }
 
 /** Page-side: the CSS-px box of each secret. Text secrets via a DOM Range on the exact string. */
-const LOCATE_JS = `(() => {
+const locateJs = (textSecrets: string[], selSecrets: string[]) => `(() => {
   const out = [];
-  const textSecrets = ${JSON.stringify(TEXT_SECRETS)};
-  const selSecrets = ${JSON.stringify(SELECTOR_SECRETS)};
+  const textSecrets = ${JSON.stringify(textSecrets)};
+  const selSecrets = ${JSON.stringify(selSecrets)};
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     for (const s of textSecrets) {
@@ -160,12 +177,12 @@ interface Capture {
   secrets: { name: string; box: BBox }[];
 }
 
-async function capture(cdp: Cdp, dpr: number): Promise<Capture> {
+async function capture(cdp: Cdp, dpr: number, page: Page): Promise<Capture> {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: VW, height: VH, deviceScaleFactor: dpr, mobile: false });
   await sleep(300); // relayout at the new scale
   const collected = await cdp.eval<string>(`JSON.stringify({
     regionList: __sl.walkDom(location.href, { w: innerWidth, h: innerHeight, dpr: devicePixelRatio }),
-    domSensitive: __sl.domSensitiveRegions(), dpr: devicePixelRatio, secrets: ${LOCATE_JS} })`);
+    domSensitive: __sl.domSensitiveRegions(), dpr: devicePixelRatio, secrets: ${locateJs(page.pixel, page.selectors)} })`);
   const c = JSON.parse(collected) as { regionList: { regions: Region[] }; domSensitive: Capture["domSensitive"]; dpr: number; secrets: Capture["secrets"] };
   const shot = await cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
   return { png: Buffer.from(shot.data, "base64"), dpr: c.dpr, regions: c.regionList.regions, domSensitive: c.domSensitive, secrets: c.secrets };
@@ -215,18 +232,21 @@ async function main() {
   try {
     const cdp = await Cdp.connect(await pageTarget());
     await cdp.send("Page.enable");
-    const loaded = cdp.once("Page.loadEventFired");
-    await cdp.send("Page.navigate", { url: pathToFileURL(resolve(ROOT, "demo/demo-dashboard.html")).href });
-    await loaded;
-    await cdp.eval(walkJs);
-    await cdp.eval(`document.getElementById("login-btn").click(); 1`);
-    await sleep(400); // roster + avatar image lay out
     await initNer("cpu");
     const outDir = resolve(HERE, ".live");
     mkdirSync(outDir, { recursive: true });
 
+    for (const page of PAGES.filter((p) => PAGE_FILTER === "all" || p.id === PAGE_FILTER)) {
+    const loaded = cdp.once("Page.loadEventFired");
+    await cdp.send("Page.navigate", { url: pathToFileURL(resolve(ROOT, page.file)).href });
+    await loaded;
+    await cdp.eval(walkJs);
+    await cdp.eval(page.prep);
+    await sleep(400); // layout + images
+    console.log(`\n########## page: ${page.id}`);
+
     for (const dpr of DPRS) {
-      const cap = await capture(cdp, dpr);
+      const cap = await capture(cdp, dpr, page);
       const face = FACE ? (FACE.split(",").map(Number) as BBox) : null;
       const t0 = Date.now();
       const run = await runPerception(cap.png, {
@@ -243,7 +263,7 @@ async function main() {
       }
       console.log(`OCR read: ${JSON.stringify(run.ocr.joined)}`);
 
-      const tag = `dpr${cap.dpr}`;
+      const tag = `${page.id}-dpr${cap.dpr}`;
       writeFileSync(join(outDir, `${tag}-raw.png`), cap.png);
       const layers = ops.map((op) => {
         const left = Math.max(0, Math.round(op.bbox[0]));
@@ -264,7 +284,15 @@ async function main() {
           if (bad) failed = true;
           console.log(`  [${bad ? "LEAK" : " ok "}] ${r.name.padEnd(22)} ${r.visible}/${r.ink} glyph px visible (${(frac * 100).toFixed(1)}%)`);
         }
+        // The manifest travels to the server as text next to the image: no secret
+        // may appear anywhere in it (DOM element names are the usual culprit).
+        const manifestJson = JSON.stringify(run.manifest);
+        for (const s of [...page.pixel, ...page.manifestOnly]) {
+          if (manifestJson.includes(s)) { failed = true; console.log(`  [LEAK] manifest text contains ${JSON.stringify(s)}`); }
+        }
+        console.log(`  manifest text: ${page.pixel.length + page.manifestOnly.length} secret string(s) checked`);
       }
+    }
     }
     await Promise.allSettled([disposeOcr(), disposeNer()]);
     cdp.close();

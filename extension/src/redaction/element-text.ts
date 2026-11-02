@@ -3,6 +3,7 @@ import { findStructuredPii, findStructuredPiiDespaced } from "./validators.js";
 import { findLabeledNames } from "./names.js";
 import { findSuspectNumericRuns, findSuspectEmailFragments } from "./suspect.js";
 import type { MappingTable } from "./mapping.js";
+import { isNonNameWord } from "./non-name-words.js";
 
 /**
  * The manifest sends every interactable element's DOM accessible name to the
@@ -14,11 +15,16 @@ import type { MappingTable } from "./mapping.js";
  * agent already uses for that value, so it can still refer to it.
  *
  * Limit, stated plainly: this recognises structured identifiers, label-anchored
- * names and misread-looking identifiers. A bare person name in a control's text
- * ("John Doe" on an account button) has no structure to detect and is not
- * caught here; on-device NER is not run over element names.
+ * names, misread-looking identifiers, and bare names by SHAPE (two or three Title
+ * Case words with no ordinary UI word). The on-device NER cannot be used for
+ * names here: it misses them in short text and calls "Sign in" a person. So a
+ * single-word name, a lowercase or non-Latin name, or a name that contains a UI
+ * word ("Grace Page") is not caught, and a Title Case heading that is not in the
+ * UI-word list is hidden as if it were a name.
  */
 interface Span { start: number; end: number; repl: string }
+
+const NAME_SHAPED = /(?:[A-Z][a-z]+|[A-Z]\.)(?:\s+(?:[A-Z][a-z]+|[A-Z]\.)){1,2}/g;
 
 export function scrubElementText(text: string, mapping: MappingTable): string {
   if (!text) return text;
@@ -29,6 +35,16 @@ export function scrubElementText(text: string, mapping: MappingTable): string {
   }
   for (const h of findLabeledNames(text)) {
     spans.push({ start: h.start, end: h.end, repl: mapping.placeholderFor(h.category, h.value) });
+  }
+  // A bare person name has no structure to detect, and the on-device NER misses
+  // it in short control text ("John Doe" -> nothing, "Priya Sharma" -> "P", and
+  // it calls "Sign in" a person), so use the name SHAPE instead: two or three
+  // Title Case words / initials, none of which is an ordinary UI or business word.
+  for (const m of text.matchAll(NAME_SHAPED)) {
+    const tokens = m[0].split(/\s+/);
+    // ANY ordinary UI word means a control label ("Submit Payment"), not a person.
+    if (tokens.some(isNonNameWord)) continue;
+    spans.push({ start: m.index!, end: m.index! + m[0].length, repl: mapping.placeholderFor("PERSON_NAME", m[0]) });
   }
   // Reuse the OCR-word misread detectors by laying the text's words out on one
   // row where x is the character index, so a returned box maps straight back

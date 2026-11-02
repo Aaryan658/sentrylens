@@ -16,8 +16,8 @@ import { unionBox } from "./geometry.js";
 export interface OcrWordBox { text: string; bbox: BBox }
 
 // Characters OCR commonly returns for a digit (4->A, 0->O/D/Q, 1->I/l/|, 5->S,
-// 8->B, 2->Z, 6->G, 7->T).
-const DIGIT_LIKE = /[0-9OoDQIl|SsBZzGTA]/;
+// 8->B, 2->Z, 6->G, 7->T, 9->g/q).
+const DIGIT_LIKE = /[0-9OoDQIl|SsBZzGTAgq]/;
 
 function sameRow(a: BBox, b: BBox): boolean {
   const overlap = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]);
@@ -49,15 +49,22 @@ const MIN_IDENTIFIER_DIGITS = 11; // an Aadhaar (12) or card (13-19) with one di
  * digits ("A111") or irregular grouping (8+4+4, 12+3). Regular 4-digit grouping
  * and a single unbroken token are treated as clean.
  */
-export function findSuspectNumericRuns(words: OcrWordBox[]): BBox[] {
-  const out: BBox[] = [];
+interface NumericRun { toks: string[]; box: BBox; digits: number; hasLookalike: boolean; allFour: boolean }
+
+/** Runs of 2+ adjacent numeric-looking words on one line (>= 11 real digits). */
+function numericRuns(words: OcrWordBox[]): NumericRun[] {
+  const out: NumericRun[] = [];
   let run: { tok: string; box: BBox }[] = [];
   const flush = () => {
     if (run.length >= 2) {
       const digits = run.reduce((n, r) => n + [...r.tok].filter((c) => /[0-9]/.test(c)).length, 0);
-      const hasLookalike = run.some((r) => /[^0-9]/.test(r.tok));
-      const allFour = run.every((r) => r.tok.length === 4);
-      if (digits >= MIN_IDENTIFIER_DIGITS && (hasLookalike || !allFour)) out.push(unionBox(run.map((r) => r.box)));
+      if (digits >= MIN_IDENTIFIER_DIGITS) {
+        out.push({
+          toks: run.map((r) => r.tok), box: unionBox(run.map((r) => r.box)), digits,
+          hasLookalike: run.some((r) => /[^0-9]/.test(r.tok)),
+          allFour: run.every((r) => r.tok.length === 4),
+        });
+      }
     }
     run = [];
   };
@@ -70,6 +77,36 @@ export function findSuspectNumericRuns(words: OcrWordBox[]): BBox[] {
   }
   flush();
   return out;
+}
+
+export function findSuspectNumericRuns(words: OcrWordBox[]): BBox[] {
+  const runs = numericRuns(words).filter((r) => r.hasLookalike || !r.allFour).map((r) => r.box);
+  // A single garbled token: a phone number read as "gooooo0000" (9->g, 0->o).
+  // Nearly every character is digit-like, at least two are lookalike LETTERS, and
+  // there is a real digit, which ordinary words and real identifiers do not have
+  // (a PAN is ~70% digit-like, a plain digit run has no lookalike letters).
+  for (const w of words) {
+    const t = stripEdges(w.text);
+    if (t.length < 9 || !/^[0-9A-Za-z]+$/.test(t) || !/[0-9]/.test(t)) continue;
+    const chars = [...t];
+    const digitLike = chars.filter((c) => DIGIT_LIKE.test(c)).length;
+    const lookalikeLetters = chars.filter((c) => /[^0-9]/.test(c) && DIGIT_LIKE.test(c)).length;
+    if (digitLike / chars.length >= 0.9 && lookalikeLetters >= 2) runs.push(w.bbox);
+  }
+  return runs;
+}
+
+/**
+ * Clean, regularly grouped digit runs (4x4 card, 4x3 Aadhaar). These are NOT
+ * masked outright, because a checksum-failing regular number is usually a sample
+ * on a docs page. But a misread that only changes a digit looks exactly like
+ * that, so the caller verifies each one by re-reading it at other scales: if a
+ * reading passes Luhn/Verhoeff it was a real number, otherwise it is left alone.
+ */
+export function findRegularNumericRuns(words: OcrWordBox[]): { box: BBox; text: string }[] {
+  return numericRuns(words)
+    .filter((r) => !r.hasLookalike && r.allFour && r.toks.length >= 3 && r.digits <= 19)
+    .map((r) => ({ box: r.box, text: r.toks.join(" ") }));
 }
 
 const COMPLETE_EMAIL = /^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}[.,;:]?$/;

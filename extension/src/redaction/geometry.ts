@@ -18,6 +18,38 @@ export function unionBox(boxes: BBox[]): BBox {
   return [x1, y1, x2 - x1, y2 - y1];
 }
 
+/**
+ * The parts of text-like boxes that no OCR word covers. A box is not "read" just
+ * because some OCR word touches it: a label and its value often merge into one
+ * blob, so OCR reading "PAN" while dropping "ABCDE1234F" left the whole blob
+ * counted as legible and the value unmasked. This returns, per box, each
+ * horizontal stretch (on the same line) at least as wide as the box is tall that
+ * no word covers; a box with no overlapping word comes back whole.
+ */
+export function residualBlindSpots(boxes: BBox[], words: { bbox: BBox }[]): BBox[] {
+  const out: BBox[] = [];
+  for (const box of boxes) {
+    const [bx, by, bw, bh] = box;
+    const spans = words
+      .filter((w) => {
+        const [wx, wy, ww, wh] = w.bbox;
+        const vOverlap = Math.min(by + bh, wy + wh) - Math.max(by, wy);
+        return vOverlap > 0.4 * Math.min(bh, wh) && wx < bx + bw && wx + ww > bx;
+      })
+      .map((w): [number, number] => [Math.max(bx, w.bbox[0]), Math.min(bx + bw, w.bbox[0] + w.bbox[2])])
+      .sort((a, b) => a[0] - b[0]);
+    if (spans.length === 0) { out.push(box); continue; }
+    const minGap = Math.max(10, bh);
+    let cursor = bx;
+    for (const [s, e] of spans) {
+      if (s - cursor >= minGap) out.push([cursor, by, s - cursor, bh]);
+      cursor = Math.max(cursor, e);
+    }
+    if (bx + bw - cursor >= minGap) out.push([cursor, by, bx + bw - cursor, bh]);
+  }
+  return out;
+}
+
 // DOM bboxes are CSS px; the screenshot is device px. Multiply by dpr before
 // masking and before writing bboxes into the manifest.
 export function viewportToImage(bbox: BBox, dpr: number): BBox {

@@ -39,7 +39,7 @@ export function planMasks(regions: RedactedRegion[]): MaskOp[] {
       bbox: [left, top, x + w + MASK_PAD - left, y + h + MASK_PAD - top],
       fill: soft ? "pixelate" : "solid",
       block: r.style === "blur" ? 8 : 12,
-      label: r.placeholder,
+      label: r.caption ?? r.placeholder,
     } satisfies MaskOp;
   });
 }

@@ -72,6 +72,13 @@ describe("findLabeledNames", () => {
     expect(findLabeledNames("Operator. Sign in to continue")).toHaveLength(0);
   });
 
+  it("does not call a UI phrase after a label a person ('Contact Support' became a person named 'Support')", () => {
+    expect(findLabeledNames("Contact Support")).toHaveLength(0);
+    expect(findLabeledNames("Operator Sign in")).toHaveLength(0);
+    // ...but a real surname that matches a UI word still works beside a real first name
+    expect(findLabeledNames("Operator Sarah Field Phone 9000000000")[0]!.value).toBe("Sarah");
+  });
+
   it("handles a label with a trailing colon", () => {
     const hits = findLabeledNames("Patient: Meera Nair");
     expect(hits).toHaveLength(1);

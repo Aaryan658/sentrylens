@@ -51,6 +51,24 @@ describe("assemblePerception", () => {
     expect(result.mapping.resolve(ph)).toBe("john.doe@mail.com");
   });
 
+  it("labels a blind-spot mask inside a control with that control's clean DOM name (white-on-blue caption OCR cannot read)", () => {
+    const base = {
+      task: "t", image: { w: 400, h: 300, dpr: 1 }, domSensitive: [], faces: [], ocrWords: [], ocrJoined: "", ocrOffsets: [], nerSpans: [], degraded: false,
+      textLikelihoodBoxes: [[330, 242, 44, 17]] as [number, number, number, number][],
+    };
+    const withName = (name: string) => assemblePerception({
+      ...base,
+      domRegions: [{ id: 1, bbox: [319, 233, 69, 32], source: "dom", role: "button", name, interactable: true }],
+    });
+    const region = (r: ReturnType<typeof withName>) => r.manifest.regions.find((x) => x.kind === "redacted") as any;
+    expect(region(withName("Sign in")).caption).toBe("Sign in");
+    // a name that itself contains PII must never be echoed onto the mask
+    expect(region(withName("Call 9000000000")).caption).toBeUndefined();
+    // and a blind spot outside every control gets no caption
+    const outside = assemblePerception({ ...base, domRegions: [{ id: 1, bbox: [0, 0, 50, 20], source: "dom", role: "button", name: "Sign in", interactable: true }] });
+    expect(region(outside).caption).toBeUndefined();
+  });
+
   it("keeps face boxes in image pixels but scales DOM boxes by dpr (MediaPipe reports bitmap px)", () => {
     const dpr = 1.5;
     const result = assemblePerception({

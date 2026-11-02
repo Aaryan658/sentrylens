@@ -7,9 +7,8 @@ import { runDetector, initDetector } from "../../src/perception/detector";
 import { initVlm, screenSummary } from "../../src/perception/vlm";
 import { assemblePerception } from "../../src/perception/pipeline";
 import { textLikelihoodRegions } from "../../src/perception/text-likelihood";
-import { rescueBlindSpot } from "../../src/perception/ocr-rescue";
+import { rescueBlindSpot, planRescueBoxes } from "../../src/perception/ocr-rescue";
 import type { RawImage } from "../../src/perception/text-likelihood";
-import { mergeRowBoxes, iou } from "../../src/redaction/geometry";
 import { maskImage } from "../../src/redaction/mask";
 import { MappingTable } from "../../src/redaction/mapping";
 import type { AgentAction, PiiCategory } from "@sentrylens/shared";
@@ -127,8 +126,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
       // OCR text goes through; a garbled misread is discarded, not
       // reported as a value (see extractRescuedPii).
       await tryStep("ocr-rescue", async () => {
-        const blindSpots = textLikelihoodBoxes.filter((box) => !ocr.words.some((w) => iou(w.bbox, box) > 0));
-        const rescueBoxes = mergeRowBoxes(blindSpots);
+        const rescueBoxes = planRescueBoxes(ocr.words, textLikelihoodBoxes);
         if (rescueBoxes.length === 0) return;
         const bmp = await createImageBitmap(await (await fetch(png)).blob());
         const canvas = new OffscreenCanvas(bmp.width, bmp.height);

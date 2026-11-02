@@ -48,6 +48,7 @@ export function buildManifest(args: BuildManifestArgs): RedactionManifest {
       style: r.style,
       task_necessary: r.task_necessary,
       detected_by: r.detected_by,
+      ...(r.caption ? { caption: r.caption } : {}),
     };
   });
 

@@ -72,6 +72,11 @@ describe("planMasks", () => {
     expect(planLabelDraw(ops)).toEqual([true, true]);
   });
 
+  it("labels a mask with its caption when it has one, else the placeholder", () => {
+    expect(planMasks([region({ caption: "Sign in", placeholder: "OTHER#1" })])[0]!.label).toBe("Sign in");
+    expect(planMasks([region({ placeholder: "EMAIL#abc12" })])[0]!.label).toBe("EMAIL#abc12");
+  });
+
   it("an empty region list plans nothing", () => {
     expect(planMasks([])).toEqual([]);
   });

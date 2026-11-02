@@ -177,12 +177,27 @@ benchmark, not a claim that all OCR blind spots are now recoverable.
   Also found there and fixed: face boxes were scaled by the device pixel ratio
   twice, so on any display scaled above 100% the mask landed off the face.
 - `pnpm live` measures glyph pixels still visible under the masks for each
-  secret on the demo page at dpr 1, 1.25, 1.5 and 2 and currently reports none.
-  That is one page and four scales, in Node OCR/NER (not the browser's wasm),
-  without MediaPipe or yolos; it needs Chrome, so it is not part of `pnpm eval`.
-- Known limits: a bare person name in a control's text has no structure to
-  detect and is not scrubbed from DOM element names; white-on-blue button
-  captions that OCR cannot read at any scale are blacked out (fail closed) and
-  cost some visual clarity; misread detection assumes a lookalike letter or odd
-  grouping, so a misread that changes only digits and keeps regular grouping
-  would pass as a clean, checksum-failing number.
+  secret at dpr 1, 1.25, 1.5 and 2 on TWO real pages (a dark-theme dashboard and
+  a light-theme, serif-font portal with links and typed text), and checks that no
+  secret string appears anywhere in the manifest text. It currently reports none.
+  The second page found two more leaks the first missed, both fixed: a phone read
+  as "gooooo0000" (one garbled token) and a PAN value that OCR dropped while it
+  read the label next to it; the backstop counted their merged text blob as
+  "read" because a word overlapped it, so blind spots are now the UNREAD part of
+  a blob. Still two pages, in Node OCR/NER (not the browser's wasm), without
+  MediaPipe or yolos; it needs Chrome, so it is not part of `pnpm eval`.
+- Also: regularly grouped digit runs that fail their checksum (a misread real card
+  keeps its grouping) are re-read at other scales and masked with their value if
+  a reading validates, otherwise left alone as a sample; button captions OCR cannot
+  read are blacked out (fail closed) and labeled with the control's clean DOM name;
+  `SENTRYLENS_CAPTURE_DIR` makes the server save each request's masked image and
+  manifest so you can inspect exactly what it received.
+- Known limits: bare person names in DOM element text are caught by SHAPE only
+  (two or three Title Case words with no ordinary UI word), because the on-device
+  NER misses names in short text ("John Doe" returned nothing) and calls "Sign in"
+  a person; single-word, lowercase, non-Latin, or UI-word-containing names are
+  missed, and a Title Case heading absent from the UI-word list is hidden as if it
+  were a name. Bare names in page PIXELS still depend on that same NER and on
+  label anchors like "Operator". Misreads of non-checksummed identifiers (phone,
+  PAN) are caught by lookalike letters and odd grouping, not by a checksum, so a
+  misread that swaps digits for other digits is not caught.

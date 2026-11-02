@@ -11,8 +11,7 @@ import { runOcr, runOcrScaled } from "../src/perception/ocr.js";
 import { runNer } from "../src/perception/ner.js";
 import { assemblePerception } from "../src/perception/pipeline.js";
 import { textLikelihoodRegions, type RawImage } from "../src/perception/text-likelihood.js";
-import { rescueBlindSpot } from "../src/perception/ocr-rescue.js";
-import { iou, mergeRowBoxes } from "../src/redaction/geometry.js";
+import { rescueBlindSpot, planRescueBoxes } from "../src/perception/ocr-rescue.js";
 import type { MappingTable } from "../src/redaction/mapping.js";
 
 export type RedactedManifestRegion = Extract<RedactionManifest["regions"][number], { kind: "redacted" }>;
@@ -27,6 +26,8 @@ export interface PerceptionInput {
   faces?: BBox[];
   /** false disables the text-likelihood backstop and rescue (for before/after comparisons only) */
   backstop?: boolean;
+  /** false keeps the backstop but skips the scoped OCR rescue (ablation only; default true) */
+  rescue?: boolean;
 }
 
 export interface PerceptionRun {
@@ -68,13 +69,12 @@ export async function runPerception(basePng: Buffer, input: PerceptionInput): Pr
   // the SAME definition fuse.ts itself uses for "blind spot" — kept
   // identical deliberately so this never rescues a box fuse.ts wouldn't
   // otherwise fail-close, and never skips one it would.
-  const blindSpots = textLikelihoodBoxes.filter((box) => !ocr.words.some((w) => iou(w.bbox, box) > 0));
+  const rescueBoxes = input.rescue === false ? [] : planRescueBoxes(ocr.words, textLikelihoodBoxes);
   // Blind-spot boxes are frequently per-character/per-fragment (connected
   // components split low-contrast text at glyph gaps) rather than one
   // line box — merge same-row fragments first so the rescue crop has a
   // full line of context, not an isolated 1-3 character sliver (see
   // mergeRowBoxes's doc comment for the empirical evidence).
-  const rescueBoxes = mergeRowBoxes(blindSpots);
   const rawImg = { data, width: info.width, height: info.height, channels: info.channels };
   const rescueIo = {
     encode: async (crop: RawImage) => {

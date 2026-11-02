@@ -1,5 +1,5 @@
 import type { BBox, PiiCategory } from "@sentrylens/shared";
-import { iou, unionBox, mergeRowBoxes } from "./geometry.js";
+import { iou, unionBox, mergeRowBoxes, residualBlindSpots } from "./geometry.js";
 import { findStructuredPii, findStructuredPiiDespaced } from "./validators.js";
 import { findLabeledNames } from "./names.js";
 import { inferCategoryFromLabel } from "./label-context.js";
@@ -121,9 +121,7 @@ export function fuseRegions(inp: PerceptionInputs): SensitiveRegion[] {
   // fragments (see docs/EVAL_RESULTS.md) into one box per text line, so a
   // single contiguous redaction replaces several small ones that could
   // otherwise leave thin unmasked gaps between fragments.
-  const blindSpots = (inp.textLikelihoodBoxes ?? []).filter(
-    (box) => !inp.ocrWords.some((w) => iou(w.bbox, box) > 0),
-  );
+  const blindSpots = residualBlindSpots(inp.textLikelihoodBoxes ?? [], inp.ocrWords);
   for (const box of mergeRowBoxes(blindSpots)) {
     // The value is genuinely unrecoverable (OCR read nothing here), but the
     // category sometimes is: a nearby legible label ("Aadhaar:", "Operator")

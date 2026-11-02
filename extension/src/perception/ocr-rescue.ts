@@ -1,6 +1,8 @@
 import type { BBox, PiiCategory } from "@sentrylens/shared";
 import { findStructuredPii, findStructuredPiiDespaced } from "../redaction/validators.js";
 import { findLabeledNames } from "../redaction/names.js";
+import { findRegularNumericRuns } from "../redaction/suspect.js";
+import { mergeRowBoxes, residualBlindSpots } from "../redaction/geometry.js";
 import type { RawImage } from "./text-likelihood.js";
 
 export interface RescueCropOptions {
@@ -127,6 +129,25 @@ export function extractRescuedPii(cropJoined: string): { category: PiiCategory; 
   // putting fake values in the mapping table. A blind spot that does not
   // validate still gets masked; it just does not claim a value it cannot back.
   return null;
+}
+
+/**
+ * Which boxes get the scoped second-pass OCR: blind spots (text-likelihood boxes
+ * no OCR word overlaps, merged per line) and regularly grouped digit runs that
+ * fail their checksum. The latter may be a misread real card/Aadhaar (a wrong
+ * digit keeps the grouping), which the rescue verifies at other scales; a run
+ * that stays invalid is left alone. Shared by the extension and the harness so
+ * both queue the same boxes.
+ */
+export function planRescueBoxes(
+  words: { text: string; bbox: BBox }[],
+  textLikelihoodBoxes: BBox[],
+): BBox[] {
+  const blindSpots = residualBlindSpots(textLikelihoodBoxes, words);
+  const unverified = findRegularNumericRuns(words)
+    .filter((r) => findStructuredPii(r.text).length === 0)
+    .map((r) => r.box);
+  return [...mergeRowBoxes(blindSpots), ...unverified];
 }
 
 export interface RescueIo {

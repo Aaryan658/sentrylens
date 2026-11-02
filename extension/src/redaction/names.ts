@@ -1,6 +1,7 @@
 import type { PiiCategory } from "@sentrylens/shared";
 import { PERSON_LABELS } from "./personLabels.js";
 import type { StructuredHit } from "./validators.js";
+import { isNonNameWord } from "./non-name-words.js";
 
 // Longer labels first ("employee name" before "employee") so the alternation
 // doesn't stop short and leave the rest of a compound label ("Name") to be
@@ -53,6 +54,9 @@ export function findLabeledNames(text: string): StructuredHit[] {
     const tokens = nm[0].trim().split(/\s+/);
     while (tokens.length && FIELD_WORDS.has(tokens[tokens.length - 1]!.toLowerCase().replace(/[^a-z]/g, ""))) tokens.pop();
     if (tokens.length === 0 || FIELD_WORDS.has(tokens[0]!.toLowerCase().replace(/[^a-z]/g, ""))) continue;
+    // A phrase made only of ordinary UI words ("Contact Support") is a control
+    // label, not a person.
+    if (tokens.every(isNonNameWord)) continue;
     // "Operator." is usually the end of a sentence (or an OCR speck), so what
     // follows is only trusted as a name when it has the initial+surname shape.
     if (/\.\s*$/.test(m[0]) && tokens.length < 2) continue;

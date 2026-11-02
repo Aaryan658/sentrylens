@@ -4,6 +4,8 @@ import { iou } from "./geometry.js";
 import type { SensitiveRegion } from "./types.js";
 
 export interface ClassifiedRegion extends SensitiveRegion {
+  /** scrubbed DOM name of the control a blind-spot mask covers (see RedactedRegionSchema.caption) */
+  caption?: string;
   risk: "high" | "medium" | "low";
   style: "blackbox" | "pixelate" | "blur";
   task_necessary: boolean;

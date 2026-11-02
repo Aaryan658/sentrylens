@@ -24,3 +24,7 @@ demo/assets/
 
 # real-Chrome harness output (contains the local demo photo) - never commit
 **/eval/.live/
+
+# server request capture (SENTRYLENS_CAPTURE_DIR) - local debugging only
+server/.captured/
+**/.captured/

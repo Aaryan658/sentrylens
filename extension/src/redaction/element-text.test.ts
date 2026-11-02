@@ -39,6 +39,28 @@ describe("scrubElementText (DOM accessible names go to the server in the manifes
     expect(scrubElementText("Mail ops.lead@vssc test", m)).toBe("Mail [REDACTED]");
   });
 
+  it("scrubs a bare person name, which has no structure to detect and which NER misses ('John Doe' returned nothing)", () => {
+    const m = new MappingTable();
+    for (const [text, name] of [
+      ["John Doe", "John Doe"],
+      ["Signed in as John Doe", "John Doe"],
+      ["Priya Sharma", "Priya Sharma"],
+      ["Account: Rahul Verma (Admin)", "Rahul Verma"],
+      ["Dr. Anita Rao", "Anita Rao"],
+    ] as const) {
+      const out = scrubElementText(text, m);
+      expect(out, text).not.toContain(name.split(" ")[0]!);
+      expect(m.resolve(m.placeholderFor("PERSON_NAME", name))).toBe(name);
+    }
+  });
+
+  it("keeps ordinary Title Case control text (stop-list of UI words), so agent grounding survives", () => {
+    const m = new MappingTable();
+    for (const name of ["Submit Payment", "Download Report", "Next Page", "Contact Support", "Account Settings", "Duty Roster", "Operator ID", "Sign in", "Open VSSC-03 report", "Privacy Policy", "Forgot Password"]) {
+      expect(scrubElementText(name, m), name).toBe(name);
+    }
+  });
+
   it("scrubs several sensitive spans in one name without mangling the rest", () => {
     const m = new MappingTable();
     const out = scrubElementText("Contact ops.lead@vssc.test or 9000000000 today", m);

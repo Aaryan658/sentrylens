@@ -31,6 +31,10 @@ export interface AssembleResult {
   mapping: MappingTable;
 }
 
+const containsBox = (outer: BBox, inner: BBox, tol = 4) =>
+  inner[0] >= outer[0] - tol && inner[1] >= outer[1] - tol &&
+  inner[0] + inner[2] <= outer[0] + outer[2] + tol && inner[1] + inner[3] <= outer[1] + outer[3] + tol;
+
 export function assemblePerception(args: AssembleArgs): AssembleResult {
   const mapping = args.mapping ?? new MappingTable();
   const dpr = args.image.dpr;
@@ -59,7 +63,17 @@ export function assemblePerception(args: AssembleArgs): AssembleResult {
     rescuedRegions: args.rescuedRegions,
   });
 
-  const classified = fused.map((r) => classify(r, args.task, domRegionsImg));
+  // A blind-spot box inside a control whose DOM name is clean is that control's
+  // caption (white-on-blue button text OCR cannot read). Label the mask with the
+  // name; the manifest already carries it as element text, so nothing new leaks.
+  const classified = fused.map((r) => {
+    const c = classify(r, args.task, domRegionsImg);
+    if (c.value != null || c.detected_by.length !== 1 || c.detected_by[0] !== "heuristic") return c;
+    const el = domRegionsImg.find(
+      (e) => e.interactable && e.name && containsBox(e.bbox, c.bbox) && scrubElementText(e.name, mapping) === e.name,
+    );
+    return el ? { ...c, caption: el.name.slice(0, 40) } : c;
+  });
 
   const elements: ElementInput[] = domRegionsImg.map((r) => ({
     // The DOM name is sent to the server as plain text; scrub it like pixels.
